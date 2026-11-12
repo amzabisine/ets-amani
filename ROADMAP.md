@@ -24,6 +24,7 @@ Single-file prototype used to agree on the features and the look. Replaced by th
 - Customer deposit and withdrawal with commission
 - Moves between own accounts with optional fee
 - Exchange USD ⇄ CDF at the typed rate, profit against a reference rate
+- Rates page: exchange rate per direction and deposit / withdrawal prices per amount range and network; both pre-fill the forms and can be changed per operation
 
 ## Phase 4 — Customers and debts ✅
 - Customer list and per-customer history

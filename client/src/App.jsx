@@ -9,6 +9,7 @@ import Debts from './pages/Debts.jsx';
 import Rentals from './pages/Rentals.jsx';
 import { Account, Accounts } from './pages/Accounts.jsx';
 import { Customer, Customers } from './pages/Customers.jsx';
+import Rates from './pages/Rates.jsx';
 import Reports from './pages/Reports.jsx';
 import Settings from './pages/Settings.jsx';
 
@@ -23,6 +24,7 @@ const NAV = [
   ['/debts', 'Debts', '<path d="M17 20v-2a4 4 0 0 0-4-4H7a4 4 0 0 0-4 4v2"/><circle cx="10" cy="7" r="4"/><path d="M19 8v6M22 11h-6"/>'],
   ['/rentals', 'Rentals', '<path d="M3 11 12 3l9 8"/><path d="M5 10v10h14V10"/><path d="M10 20v-6h4v6"/>'],
   ['/money', 'Income & expenses', '<path d="M12 2v20M17 6H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>'],
+  ['/rates', 'Rates', '<path d="M19 5 5 19"/><circle cx="6.5" cy="6.5" r="2.5"/><circle cx="17.5" cy="17.5" r="2.5"/>'],
   [null, 'Records'],
   ['/accounts', 'Accounts', '<rect x="2" y="6" width="20" height="13" rx="2"/><path d="M2 10h20M6 15h4"/>'],
   ['/customers', 'Customers', '<circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/>'],
@@ -143,6 +145,7 @@ export default function App() {
             <Route path="/accounts/:id" element={<Account />} />
             <Route path="/customers" element={<Customers />} />
             <Route path="/customers/:id" element={<Customer />} />
+            <Route path="/rates" element={<Rates />} />
             <Route path="/reports" element={<Reports />} />
             <Route path="/settings" element={<Settings />} />
             <Route path="*" element={<Navigate to="/" replace />} />

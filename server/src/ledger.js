@@ -60,6 +60,7 @@ export async function createTxn(db, b, user) {
     t.currency = from.currency; t.amount = amt; t.pnl_currency = from.currency;
     if (type === 'transfer') { // customer service: the commission is earned on top
       t.customer_id = await customerId(db, b, false);
+      t.category = ['deposit', 'withdraw'].includes(b.mode) ? b.mode : '';
       move(from, -amt); move(to, amt + fee); t.pnl = fee;
     } else { // own money moved between own accounts: the fee is a cost
       move(from, -(amt + fee)); move(to, amt); t.pnl = -fee;
@@ -188,6 +189,10 @@ export async function getState(user, day) {
     settings: { ref_rate: Number((await q("select value from settings where key='ref_rate'"))[0]?.value) || null },
     today: { date: day, pnl: await q('select type, pnl_currency currency, sum(pnl) total from txns where date=$1 and pnl <> 0 group by type, pnl_currency', [day]) },
     recent: await listTxns({ limit: 10 }),
+    rates: {
+      exchange: await q('select * from exchange_rates order by from_currency, to_currency'),
+      fees: await q('select * from transfer_fees order by kind desc, provider, currency, min_amount'),
+    },
   };
   if (user.role === 'owner') state.users = await q('select id, username, role, created_at from users order by id');
   return state;

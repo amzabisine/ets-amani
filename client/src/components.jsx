@@ -96,20 +96,27 @@ export function TxnTable({ rows, empty = 'Nothing recorded yet.', balance, compa
    choice can narrow the next (e.g. only accounts in the same currency).        */
 const optionsOf = (f, v) => (typeof f.options === 'function' ? f.options(v) : f.options);
 
-function normalise(fields, values) {
+// Keeps the form consistent after every change: selects always hold a valid
+// choice, and `auto` fields (e.g. the price from the Rates page) are refilled
+// until the user types their own value in them.
+function settle(fields, values, touched) {
   const v = { ...values };
   for (const f of fields) {
-    if (f.type !== 'select') continue;
-    const list = optionsOf(f, v);
-    if (!list.some((o) => String(o.value) === String(v[f.name]))) v[f.name] = list[0] ? String(list[0].value) : '';
+    if (f.type === 'select') {
+      const list = optionsOf(f, v);
+      if (!list.some((o) => String(o.value) === String(v[f.name]))) v[f.name] = list[0] ? String(list[0].value) : '';
+    } else if (f.auto && !touched.has(f.name)) {
+      v[f.name] = f.auto(v);
+    }
   }
   return v;
 }
 
 export function FormModal({ config, onClose, onDone }) {
   const { fields } = config;
+  const touched = useRef(new Set());
   const [values, setValues] = useState(() =>
-    normalise(fields, Object.fromEntries(fields.map((f) => [f.name, f.type === 'check' ? !!f.value : String(f.value ?? '')]))));
+    settle(fields, Object.fromEntries(fields.map((f) => [f.name, f.type === 'check' ? !!f.value : String(f.value ?? '')])), touched.current));
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const formRef = useRef(null);
@@ -118,11 +125,14 @@ export function FormModal({ config, onClose, onDone }) {
   useEffect(() => { formRef.current?.querySelector('input:not([type=date]):not([type=checkbox]), select')?.focus(); }, []);
   useEffect(() => { if (error) errRef.current?.scrollIntoView({ block: 'nearest' }); }, [error]);
 
-  const set = (name, value) => setValues((old) => {
-    const v = { ...old, [name]: value };
-    for (const f of fields) if (f.resetOn === name) v[f.name] = '';
-    return normalise(fields, v);
-  });
+  const set = (name, value) => {
+    touched.current.add(name);
+    setValues((old) => {
+      const v = { ...old, [name]: value };
+      for (const f of fields) if (f.resetOn === name) v[f.name] = '';
+      return settle(fields, v, touched.current);
+    });
+  };
 
   const submit = async (e) => {
     e.preventDefault();

@@ -64,6 +64,18 @@ export function debtTotals(S) {
   return o;
 }
 
+/** My default rate when I give `from` and receive `to` (1 USD = ? other), or null. */
+export const exchangeRate = (S, from, to) =>
+  S.rates.exchange.find((r) => r.from_currency === from && r.to_currency === to)?.rate ?? null;
+
+/** Price of a deposit / withdrawal from the Rates page, in cents, or null if no range matches. */
+export function transferFee(S, kind, provider, currency, amount) {
+  const rows = S.rates.fees.filter((f) =>
+    f.kind === kind && f.currency === currency && amount >= f.min_amount && (f.max_amount == null || amount <= f.max_amount));
+  const row = rows.find((f) => f.provider === provider) || rows.find((f) => !f.provider); // a network's own price wins
+  return row ? Math.round(row.fee + (amount * row.percent) / 100) : null;
+}
+
 export const TYPES = {
   capital_in: ['Capital added', 'b'], capital_out: ['Capital withdrawn', 'y'], transfer: ['Transfer', 'g'],
   move: ['Internal move', ''], exchange: ['Exchange', 'p'], loan_given: ['Money lent', 'r'],
@@ -82,7 +94,7 @@ export function describe(S, t) {
   switch (t.type) {
     case 'capital_in': return `Into ${accName(to)}`;
     case 'capital_out': return `From ${accName(from)}`;
-    case 'transfer': return `${accName(from)} → ${accName(to)}${t.pnl ? ` · commission ${n2(t.pnl, t.currency)}` : ''}`;
+    case 'transfer': return `${{ deposit: 'Deposit · ', withdraw: 'Withdrawal · ' }[t.category] || ''}${accName(from)} → ${accName(to)}${t.pnl ? ` · commission ${n2(t.pnl, t.currency)}` : ''}`;
     case 'move': return `${accName(from)} → ${accName(to)}${t.pnl ? ` · fee ${n2(-t.pnl, t.currency)}` : ''}`;
     case 'exchange': return `${accName(from)} ${t.currency} → ${accName(to)} ${t.to_currency} · rate ${t.rate}`;
     case 'loan_given': case 'borrow_repaid': return `Paid from ${accName(from)}`;

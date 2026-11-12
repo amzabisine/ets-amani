@@ -1,6 +1,7 @@
 // Three simple screens: a few buttons and the list of matching operations.
+import { Link } from 'react-router-dom';
 import { Card, Head, Op, TxnTable } from '../components.jsx';
-import { useApp, useTxns } from '../lib.js';
+import { exchangeRate, useApp, useTxns } from '../lib.js';
 
 export function Transfers() {
   const rows = useTxns({ types: 'transfer,move' });
@@ -11,6 +12,7 @@ export function Transfers() {
         <Op name="transfer" args={{ mode: 'withdraw' }} cls="dark">+ Withdrawal</Op>
         <Op name="transfer" args={{ mode: 'other' }}>Other transfer</Op>
         <Op name="move">Move between my accounts</Op>
+        <Link className="btn" to="/rates">Prices</Link>
       </Head>
       <Card><TxnTable rows={rows} empty="No transfers yet. Record your first deposit or withdrawal." /></Card>
     </>
@@ -20,12 +22,12 @@ export function Transfers() {
 export function Exchange() {
   const { S } = useApp();
   const rows = useTxns({ types: 'exchange' });
-  const rate = S.settings.ref_rate ? `1 USD = ${S.settings.ref_rate} CDF` : 'not set yet';
+  const show = (r) => (r ? `1 USD = ${r} CDF` : 'not set');
   return (
     <>
-      <Head title="Exchange" sub={`USD ⇄ CDF · reference rate: ${rate}`}>
+      <Head title="Exchange" sub={`I give USD: ${show(exchangeRate(S, 'USD', 'CDF'))} · I give CDF: ${show(exchangeRate(S, 'CDF', 'USD'))}`}>
         <Op name="exchange" cls="primary">+ New exchange</Op>
-        <Op name="rate">Set reference rate</Op>
+        <Link className="btn" to="/rates">Rates</Link>
       </Head>
       <Card><TxnTable rows={rows} empty="No exchange recorded yet." /></Card>
     </>

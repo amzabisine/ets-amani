@@ -1,6 +1,6 @@
 // Every operation the owner can do. FORMS open a dialog; ACTIONS run directly.
 import { Signed } from './components.jsx';
-import { acc, accFull, accName, api, live, n2 } from './lib.js';
+import { acc, accFull, accName, api, exchangeRate, live, n2, transferFee } from './lib.js';
 
 const accOpts = (list) => list.map((a) => ({ value: a.id, label: `${accFull(a)}  —  ${n2(a.balance, a.currency)} available` }));
 const curOpts = (S) => S.currencies.map((c) => ({ value: c, label: c }));
@@ -25,6 +25,12 @@ export const FORMS = {
       withdraw: ['Customer withdrawal', 'The customer sends you e-money, you give cash. Cash goes down, virtual goes up.', cashish, virt],
       other: ['Other transfer', 'Any customer transfer between two of your accounts in the same currency.', live(S), live(S)],
     }[mode];
+    // The price list is per network: the virtual side of the transfer decides which one applies.
+    const price = (v) => {
+      const virtual = acc(S, mode === 'deposit' ? v.from_account_id : v.to_account_id);
+      const amount = Math.round(Number(v.amount) * 100);
+      return mode === 'other' || !virtual || !(amount > 0) ? null : transferFee(S, mode, virtual.provider, virtual.currency, amount);
+    };
     return {
       title, intro, submit: 'Record transfer',
       fields: [fDate(S),
@@ -32,10 +38,15 @@ export const FORMS = {
         { name: 'to_account_id', label: 'Money comes IN to', type: 'select',
           options: (v) => { const f = acc(S, v.from_account_id); return accOpts(inList.filter((a) => f && a.currency === f.currency && a.id !== f.id)); } },
         { name: 'amount', label: 'Amount', type: 'money', required: true },
-        { name: 'fee', label: 'Commission you earn', type: 'money', hint: 'Added on top of the amount received. Counts as profit.' },
+        { name: 'fee', label: 'Commission you earn', type: 'money',
+          hint: mode === 'other' ? 'Added on top of the amount received. Counts as profit.' : 'Filled from your Rates page when the amount matches a price range. You can change it.',
+          auto: (v) => { const fee = price(v); return fee == null ? '' : String(fee / 100); } },
         ...fCustomer(S), fNote],
-      info: (v) => <Avail a={acc(S, v.from_account_id)} />,
-      onSubmit: post('transfer'),
+      info(v) {
+        const fee = price(v), f = acc(S, v.from_account_id);
+        return <><Avail a={f} />{fee != null && <><br />Price from your rates: <b>{n2(fee, f.currency)} {f.currency}</b></>}</>;
+      },
+      onSubmit: (v) => api('POST', '/txns', { ...v, type: 'transfer', mode }),
     };
   },
 
@@ -65,7 +76,9 @@ export const FORMS = {
             return accOpts(live(S).filter((a) => f && a.currency !== f.currency).sort((x, y) => (accName(y) === accName(f)) - (accName(x) === accName(f))));
           } },
         { name: 'amount', label: 'Amount you give', type: 'money', required: true },
-        { name: 'rate', label: 'Your rate (1 USD = ? CDF)', type: 'rate', required: true, placeholder: 'e.g. 2850' },
+        { name: 'rate', label: 'Your rate (1 USD = ? CDF)', type: 'rate', required: true, placeholder: 'e.g. 2850',
+          hint: 'Filled from your Rates page for this direction. You can change it.',
+          auto: (v) => { const f = acc(S, v.from_account_id), t = acc(S, v.to_account_id); return String((f && t && exchangeRate(S, f.currency, t.currency)) || ''); } },
         { name: 'ref_rate', label: 'Reference rate (your cost)', type: 'rate', value: S.settings.ref_rate || '',
           hint: 'Used only to calculate your profit on this exchange. Change the default in Settings.' },
         ...fCustomer(S), fNote],
@@ -220,6 +233,36 @@ export const FORMS = {
     };
   },
 
+  exRate(S, { from, to }) {
+    const other = from === 'USD' ? to : to === 'USD' ? from : null;
+    return {
+      title: `Rate when I give ${from} and receive ${to}`,
+      intro: 'Used to pre-fill the exchange form for this direction.',
+      fields: [{ name: 'rate', label: other ? `1 USD = ? ${other}` : `1 ${from} = ? ${to}`, type: 'rate', value: exchangeRate(S, from, to) || '', required: true }],
+      onSubmit: (v) => api('PUT', '/rates/exchange', { from_currency: from, to_currency: to, rate: v.rate }),
+    };
+  },
+
+  fee(S, { id, kind = 'withdraw' } = {}) {
+    const f = id && S.rates.fees.find((x) => x.id === Number(id));
+    const networks = [...new Set(live(S).filter((a) => a.kind === 'virtual').map((a) => a.provider))];
+    if (f?.provider && !networks.includes(f.provider)) networks.push(f.provider);
+    return {
+      title: f ? 'Edit price range' : 'New price range',
+      intro: 'The commission you charge when the amount falls in this range.',
+      fields: [
+        { name: 'kind', label: 'Operation', type: 'select', value: f?.kind || kind, options: [{ value: 'withdraw', label: 'Withdrawal' }, { value: 'deposit', label: 'Deposit' }] },
+        { name: 'provider', label: 'Network', type: 'select', value: f?.provider || '', options: [{ value: '', label: 'All networks' }, ...networks.map((n) => ({ value: n, label: n }))] },
+        { name: 'currency', label: 'Currency', type: 'select', value: f?.currency, options: curOpts(S) },
+        { name: 'min_amount', label: 'From amount', type: 'money', value: f ? f.min_amount / 100 : '', placeholder: '0' },
+        { name: 'max_amount', label: 'To amount', type: 'money', value: f?.max_amount != null ? f.max_amount / 100 : '', placeholder: 'no limit', hint: 'Leave empty for “and above”.' },
+        { name: 'fee_type', label: 'Price is', type: 'select', value: f?.percent ? 'percent' : 'fixed', options: [{ value: 'fixed', label: 'A fixed amount' }, { value: 'percent', label: 'A percentage of the amount' }] },
+        { name: 'value', label: 'Price', type: 'money', value: f ? (f.percent || f.fee / 100) : '', required: true }],
+      info: (v) => (v.fee_type === 'percent' ? <>Price: <b>{v.value || 0} %</b> of the amount</> : <>Price: <b>{v.value || 0} {v.currency}</b> per operation</>),
+      onSubmit: (v) => api(f ? 'PUT' : 'POST', '/rates/fees' + (f ? '/' + f.id : ''), v),
+    };
+  },
+
   rate(S) {
     return {
       title: 'Reference exchange rate', intro: 'Your cost rate. Exchange profit is measured against it.',
@@ -240,6 +283,11 @@ export const ACTIONS = {
     if (!window.confirm('Delete this customer?')) return null;
     await api('DELETE', '/customers/' + id);
     return 'Customer deleted';
+  },
+  async delFee(S, { id }) {
+    if (!window.confirm('Delete this price range?')) return null;
+    await api('DELETE', '/rates/fees/' + id);
+    return 'Price range deleted';
   },
   async delUser(S, { id }) {
     if (!window.confirm('Remove this user?')) return null;

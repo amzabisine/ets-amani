@@ -5,19 +5,12 @@ export default function Settings() {
   const { S, isOwner } = useApp();
   return (
     <>
-      <Head title="Settings" sub="Users, password and exchange reference rate" />
+      <Head title="Settings" sub="Users and password" />
       <div className="grid g2">
         <Card title="My account">
           <div className="bd">
             Signed in as <b>{S.user.username}</b> · {isOwner ? 'Owner — full access' : 'View only'}
             <div style={{ marginTop: 12 }}><Op name="password">Change my password</Op></div>
-          </div>
-        </Card>
-        <Card title="Reference exchange rate">
-          <div className="bd">
-            {S.settings.ref_rate ? <b style={{ fontSize: 20 }}>1 USD = {S.settings.ref_rate} CDF</b> : 'Not set yet.'}
-            <div className="sub" style={{ margin: '6px 0 12px' }}>Your cost rate. Exchange profit is measured against it.</div>
-            <span className="owner-only"><Op name="rate">Change rate</Op></span>
           </div>
         </Card>
         {S.users && (

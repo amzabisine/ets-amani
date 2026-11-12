@@ -129,6 +129,49 @@ api.put('/settings', async (req, res) => {
   ok(res);
 });
 
+/* Rates only pre-fill the forms; they never change operations already recorded. */
+api.put('/rates/exchange', async (req, res) => {
+  const { from_currency: from, to_currency: to } = req.body, rate = Number(req.body.rate);
+  if (!CURRENCIES.includes(from) || !CURRENCIES.includes(to) || from === to) throw bad('Choose two different currencies');
+  if (!Number.isFinite(rate) || rate <= 0) throw bad('Enter a valid rate');
+  await q(`insert into exchange_rates(from_currency, to_currency, rate) values($1,$2,$3)
+           on conflict(from_currency, to_currency) do update set rate = excluded.rate, updated_at = now()`, [from, to, rate]);
+  ok(res);
+});
+api.delete('/rates/exchange/:id', async (req, res) => { await q('delete from exchange_rates where id=$1', [id(req)]); ok(res); });
+
+async function saveFee(req, feeId) {
+  const b = req.body;
+  if (!['deposit', 'withdraw'].includes(b.kind)) throw bad('Choose deposit or withdrawal');
+  if (!CURRENCIES.includes(b.currency)) throw bad('Choose the currency');
+  const provider = str(b.provider, 40);
+  const min = toMinor(b.min_amount || 0, 'From amount', true);
+  const max = b.max_amount === '' || b.max_amount == null ? null : toMinor(b.max_amount, 'To amount');
+  if (max != null && max < min) throw bad('“To amount” must be bigger than “From amount”');
+  const value = Number(b.value);
+  if (!Number.isFinite(value) || value < 0) throw bad('Enter the price');
+  const percent = b.fee_type === 'percent';
+  if (percent && value > 100) throw bad('Percent cannot be more than 100');
+  await tx(async (db) => {
+    await db.q('lock table transfer_fees in exclusive mode');
+    const clash = await db.one(
+      `select 1 from transfer_fees where kind=$1 and provider=$2 and currency=$3 and id <> $4
+       and min_amount <= coalesce($6, 9223372036854775807) and $5 <= coalesce(max_amount, 9223372036854775807)`,
+      [b.kind, provider, b.currency, feeId || 0, min, max]);
+    if (clash) throw bad('This range overlaps another price for the same network and currency');
+    const args = [b.kind, provider, b.currency, min, max, percent ? 0 : Math.round(value * 100), percent ? value : 0];
+    if (feeId) {
+      const rows = await db.q('update transfer_fees set kind=$1, provider=$2, currency=$3, min_amount=$4, max_amount=$5, fee=$6, percent=$7 where id=$8 returning id', [...args, feeId]);
+      if (!rows.length) throw bad('Not found', 404);
+    } else {
+      await db.q('insert into transfer_fees(kind, provider, currency, min_amount, max_amount, fee, percent) values($1,$2,$3,$4,$5,$6,$7)', args);
+    }
+  });
+}
+api.post('/rates/fees', async (req, res) => { await saveFee(req); ok(res); });
+api.put('/rates/fees/:id', async (req, res) => { await saveFee(req, id(req)); ok(res); });
+api.delete('/rates/fees/:id', async (req, res) => { await q('delete from transfer_fees where id=$1', [id(req)]); ok(res); });
+
 api.post('/users', async (req, res) => {
   await tx((db) => makeUser(db, req.body.username, req.body.password, req.body.role === 'owner' ? 'owner' : 'viewer'));
   ok(res);
