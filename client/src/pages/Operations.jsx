@@ -1,7 +1,7 @@
 // Three simple screens: a few buttons and the list of matching operations.
 import { Link } from 'react-router-dom';
 import { Card, Head, Op, TxnTable } from '../components.jsx';
-import { exchangeRate, useApp, useTxns } from '../lib.js';
+import { fmtRate, useApp, useTxns } from '../lib.js';
 
 export function Transfers() {
   const rows = useTxns({ types: 'transfer,move' });
@@ -22,10 +22,10 @@ export function Transfers() {
 export function Exchange() {
   const { S } = useApp();
   const rows = useTxns({ types: 'exchange' });
-  const show = (r) => (r ? `1 USD = ${r} CDF` : 'not set');
+  const rates = S.rates.exchange.map((r) => `1 ${r.from_currency} = ${fmtRate(r.rate)} ${r.to_currency}`).join('  ·  ');
   return (
     <>
-      <Head title="Exchange" sub={`I give USD: ${show(exchangeRate(S, 'USD', 'CDF'))} · I give CDF: ${show(exchangeRate(S, 'CDF', 'USD'))}`}>
+      <Head title="Exchange" sub={rates || 'No rates set yet — add them on the Rates page'}>
         <Op name="exchange" cls="primary">+ New exchange</Op>
         <Link className="btn" to="/rates">Rates</Link>
       </Head>

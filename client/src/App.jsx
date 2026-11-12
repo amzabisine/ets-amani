@@ -153,10 +153,13 @@ export default function App() {
         </main>
         <button className="burger" onClick={() => setMenu((m) => !m)} aria-label="Menu">☰</button>
       </div>
-      {form && (
-        <FormModal config={form} onClose={() => setForm(null)}
-          onDone={async (message) => { setForm(null); toast(message); await refresh(); }} />
-      )}
+      {form && (() => {
+        const Dialog = form.custom || FormModal; // a few forms bring their own dialog
+        return (
+          <Dialog config={form} onClose={() => setForm(null)}
+            onDone={async (message) => { setForm(null); toast(message); await refresh(); }} />
+        );
+      })()}
       {toastEl}
     </AppContext.Provider>
   );

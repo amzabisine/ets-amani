@@ -1,15 +1,19 @@
 // The heart of the system: every operation moves money between accounts,
 // and money can never leave an account that does not hold it.
 import { q } from './db.js';
-import { CURRENCIES, accName, bad, fmt, isDate, isMonth, monthsBetween, str, toMinor, today } from './util.js';
+import { accName, bad, fmt, isDate, isMonth, monthsBetween, str, toMinor, today } from './util.js';
 
 const SEED = [
   ['Airtel Money', '', 'virtual'], ['M-Pesa', 'Org Account', 'virtual'], ['M-Pesa', 'Float Account', 'virtual'],
   ['Orange Money', '', 'virtual'], ['Cash', '', 'cash'], ['Bank', '', 'bank'],
 ];
+/** The currency codes in use, USD first. */
+export const currencyCodes = async (db = { q }) => (await db.q('select code from currencies order by position')).map((r) => r.code);
+
 export async function seedAccounts(db) {
+  const currencies = await currencyCodes(db);
   for (const [provider, label, kind] of SEED) {
-    for (const currency of CURRENCIES) {
+    for (const currency of currencies) {
       await db.q('insert into accounts(provider, label, kind, currency) values($1,$2,$3,$4)', [provider, label, kind, currency]);
     }
   }
@@ -72,7 +76,7 @@ export async function createTxn(db, b, user) {
     const amt = toMinor(b.amount), rate = Number(b.rate);
     if (!Number.isFinite(rate) || rate <= 0) throw bad('Enter the exchange rate');
     const usdOut = from.currency === 'USD', usdIn = to.currency === 'USD';
-    const got = Math.round(usdIn ? amt / rate : amt * rate);
+    const got = Math.round(amt * rate); // rate: 1 unit given = ? units received
     if (got <= 0) throw bad('Amount is too small for this rate');
     t.customer_id = await customerId(db, b, false);
     Object.assign(t, { currency: from.currency, amount: amt, to_currency: to.currency, to_amount: got, rate });
@@ -185,8 +189,9 @@ export async function getState(user, day) {
   });
 
   const state = {
-    user: { username: user.username, role: user.role }, currencies: CURRENCIES, accounts, customers, rentals,
-    settings: { ref_rate: Number((await q("select value from settings where key='ref_rate'"))[0]?.value) || null },
+    user: { username: user.username, role: user.role }, currencies: await currencyCodes(), accounts, customers, rentals,
+    // reference (cost) rates: { CDF: 2800 } means 1 USD = 2800 CDF
+    settings: { ref_rates: Object.fromEntries((await q("select key, value from settings where key like 'ref_rate_%'")).map((r) => [r.key.slice(9), Number(r.value)])) },
     today: { date: day, pnl: await q('select type, pnl_currency currency, sum(pnl) total from txns where date=$1 and pnl <> 0 group by type, pnl_currency', [day]) },
     recent: await listTxns({ limit: 10 }),
     rates: {

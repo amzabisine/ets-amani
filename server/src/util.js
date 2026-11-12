@@ -1,5 +1,3 @@
-export const CURRENCIES = ['USD', 'CDF'];
-
 /** An error that is safe to show to the user. */
 export const bad = (message, status = 400) => Object.assign(new Error(message), { status });
 

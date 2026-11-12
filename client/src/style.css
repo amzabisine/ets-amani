@@ -147,3 +147,12 @@ input:focus,select:focus,textarea:focus{outline:2px solid rgba(15,138,108,.25);b
 }
 @media (max-width:520px){.g4{grid-template-columns:1fr}.stat .big{font-size:21px}}
 @media print{.side,.burger,.actions,.filters,.tabs,.btn{display:none!important}.shell{display:block}.main{padding:0}.card{box-shadow:none}body{background:#fff}}
+
+/* price list editor */
+.dialog.wide{max-width:640px}
+.row3{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+.ranges{display:grid;gap:8px;margin:4px 0 12px}
+.range{display:grid;grid-template-columns:1fr 1fr 1fr 92px 36px;gap:8px;align-items:center}
+.range.head{font-size:12px;font-weight:600;color:var(--muted)}
+.range input,.range select{padding:9px 10px}
+@media (max-width:560px){.row3{grid-template-columns:1fr}.range{grid-template-columns:1fr 1fr 1fr 70px 30px;gap:5px}}

@@ -13,6 +13,8 @@ export function Accounts() {
         <Op name="capital" args={{ type: 'capital_in' }} cls="primary">+ Add money</Op>
         <Op name="capital" args={{ type: 'capital_out' }}>Take money out</Op>
         <Op name="move">Move between accounts</Op>
+        <Op name="network">New network</Op>
+        <Op name="currency">New currency</Op>
         <Op name="account">New account</Op>
       </Head>
       {KINDS.map(([kind, title]) => (

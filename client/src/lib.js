@@ -40,7 +40,9 @@ export const localDay = () => {
 
 /* ---------- formatting ---------- */
 export const n2 = (minor, cur) =>
-  (minor / 100).toLocaleString('en-US', { minimumFractionDigits: cur === 'CDF' ? 0 : 2, maximumFractionDigits: 2 });
+  (minor / 100).toLocaleString('en-US', { minimumFractionDigits: cur === 'USD' ? 2 : 0, maximumFractionDigits: 2 });
+/** A rate, big (2,850) or tiny (0.000364), without losing its digits. */
+export const fmtRate = (r) => Number(r).toLocaleString('en-US', { maximumSignificantDigits: 6 });
 export const dfmt = (d) => { const [y, m, dd] = d.split('-'); return `${dd}/${m}/${y}`; };
 export const accName = (a) => (a ? `${a.provider}${a.label ? ' ' + a.label : ''}` : '—');
 export const accFull = (a) => (a ? `${accName(a)} · ${a.currency}` : '—');
@@ -64,7 +66,7 @@ export function debtTotals(S) {
   return o;
 }
 
-/** My default rate when I give `from` and receive `to` (1 USD = ? other), or null. */
+/** My default rate when I give `from` and receive `to`: 1 from = ? to. Null if not set. */
 export const exchangeRate = (S, from, to) =>
   S.rates.exchange.find((r) => r.from_currency === from && r.to_currency === to)?.rate ?? null;
 
@@ -96,7 +98,7 @@ export function describe(S, t) {
     case 'capital_out': return `From ${accName(from)}`;
     case 'transfer': return `${{ deposit: 'Deposit · ', withdraw: 'Withdrawal · ' }[t.category] || ''}${accName(from)} → ${accName(to)}${t.pnl ? ` · commission ${n2(t.pnl, t.currency)}` : ''}`;
     case 'move': return `${accName(from)} → ${accName(to)}${t.pnl ? ` · fee ${n2(-t.pnl, t.currency)}` : ''}`;
-    case 'exchange': return `${accName(from)} ${t.currency} → ${accName(to)} ${t.to_currency} · rate ${t.rate}`;
+    case 'exchange': return `${accName(from)} ${t.currency} → ${accName(to)} ${t.to_currency} · 1 ${t.currency} = ${fmtRate(t.rate)} ${t.to_currency}`;
     case 'loan_given': case 'borrow_repaid': return `Paid from ${accName(from)}`;
     case 'loan_repaid': case 'borrowed': return `Received in ${accName(to)}`;
     case 'rent_payment': {

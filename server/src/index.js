@@ -4,8 +4,8 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { one, q, tx } from './db.js';
 import { checkPassword, clearThrottle, endSession, makeUser, requireOwner, requireUser, sessionUser, setPassword, startSession, throttle } from './auth.js';
-import { balanceOf, createTxn, customerId, deleteTxn, getState, listTxns, report, seedAccounts } from './ledger.js';
-import { CURRENCIES, bad, isDate, isMonth, str, toMinor, today } from './util.js';
+import { balanceOf, createTxn, currencyCodes, customerId, deleteTxn, getState, listTxns, report, seedAccounts } from './ledger.js';
+import { bad, isDate, isMonth, str, toMinor, today } from './util.js';
 
 const app = express();
 app.set('trust proxy', 1);
@@ -68,6 +68,7 @@ api.get('/report', async (req, res) => {
 api.use(requireOwner);
 const id = (req) => { const n = Number(req.params.id); if (!Number.isInteger(n) || n < 1) throw bad('Not found', 404); return n; };
 const ok = (res) => res.json({ ok: true });
+const needCurrency = async (code) => { if (!(await currencyCodes()).includes(code)) throw bad('Choose the currency'); };
 
 api.post('/txns', async (req, res) => res.json(await tx((db) => createTxn(db, req.body, req.user))));
 api.delete('/txns/:id', async (req, res) => { await tx((db) => deleteTxn(db, id(req))); ok(res); });
@@ -76,7 +77,7 @@ api.post('/accounts', async (req, res) => {
   const b = req.body, provider = str(b.provider, 40);
   if (!provider) throw bad('Enter the account name');
   if (!['virtual', 'cash', 'bank'].includes(b.kind)) throw bad('Choose the account type');
-  if (!CURRENCIES.includes(b.currency)) throw bad('Choose the currency');
+  await needCurrency(b.currency);
   await q('insert into accounts(provider, label, kind, currency, on_dashboard) values($1,$2,$3,$4,$5)', [provider, str(b.label, 40), b.kind, b.currency, !!b.on_dashboard]);
   ok(res);
 });
@@ -105,7 +106,7 @@ api.delete('/customers/:id', async (req, res) => {
 api.post('/rentals', async (req, res) => {
   const b = req.body, property = str(b.property, 80);
   if (!property) throw bad('Enter the property name');
-  if (!CURRENCIES.includes(b.currency)) throw bad('Choose the currency');
+  await needCurrency(b.currency);
   if (!isMonth(b.start_month)) throw bad('Choose the first month of rent');
   const monthly = toMinor(b.monthly, 'Monthly rent');
   await tx(async (db) => {
@@ -122,55 +123,73 @@ api.put('/rentals/:id', async (req, res) => {
   ok(res);
 });
 
-api.put('/settings', async (req, res) => {
-  const r = Number(req.body.ref_rate);
-  if (!Number.isFinite(r) || r <= 0) throw bad('Enter a valid rate');
-  await q("insert into settings(key, value) values('ref_rate', $1) on conflict(key) do update set value = excluded.value", [String(r)]);
+/* Currencies: USD is the base; others can be added (e.g. UGX for Uganda). */
+api.post('/currencies', async (req, res) => {
+  const code = str(req.body.code, 3).toUpperCase();
+  if (!/^[A-Z]{3}$/.test(code)) throw bad('The currency code is 3 letters, e.g. UGX');
+  await tx(async (db) => {
+    if (await db.one('select 1 from currencies where code=$1', [code])) throw bad(`${code} already exists`);
+    await db.q('insert into currencies(code, name) values($1,$2)', [code, str(req.body.name, 40)]);
+    if (req.body.with_accounts) {
+      for (const [provider, kind] of [['Cash', 'cash'], ['Bank', 'bank']]) {
+        await db.q('insert into accounts(provider, kind, currency) values($1,$2,$3)', [provider, kind, code]);
+      }
+    }
+  });
   ok(res);
 });
 
 /* Rates only pre-fill the forms; they never change operations already recorded. */
+
+// Reference (cost) rate of a currency: 1 USD = ? of it. Exchange profit is measured against it.
+api.put('/settings', async (req, res) => {
+  const r = Number(req.body.ref_rate), currency = req.body.currency;
+  await needCurrency(currency);
+  if (currency === 'USD') throw bad('USD is the base currency');
+  if (!Number.isFinite(r) || r <= 0) throw bad('Enter a valid rate');
+  await q('insert into settings(key, value) values($1, $2) on conflict(key) do update set value = excluded.value', ['ref_rate_' + currency, String(r)]);
+  ok(res);
+});
+
+// My rate for one direction: 1 unit of what I give = ? of what I receive.
 api.put('/rates/exchange', async (req, res) => {
   const { from_currency: from, to_currency: to } = req.body, rate = Number(req.body.rate);
-  if (!CURRENCIES.includes(from) || !CURRENCIES.includes(to) || from === to) throw bad('Choose two different currencies');
+  await needCurrency(from); await needCurrency(to);
+  if (from === to) throw bad('Choose two different currencies');
   if (!Number.isFinite(rate) || rate <= 0) throw bad('Enter a valid rate');
   await q(`insert into exchange_rates(from_currency, to_currency, rate) values($1,$2,$3)
            on conflict(from_currency, to_currency) do update set rate = excluded.rate, updated_at = now()`, [from, to, rate]);
   ok(res);
 });
-api.delete('/rates/exchange/:id', async (req, res) => { await q('delete from exchange_rates where id=$1', [id(req)]); ok(res); });
 
-async function saveFee(req, feeId) {
-  const b = req.body;
+// Replace the whole price list of one operation + network + currency in one go.
+api.put('/rates/fees', async (req, res) => {
+  const b = req.body, provider = str(b.provider, 40);
   if (!['deposit', 'withdraw'].includes(b.kind)) throw bad('Choose deposit or withdrawal');
-  if (!CURRENCIES.includes(b.currency)) throw bad('Choose the currency');
-  const provider = str(b.provider, 40);
-  const min = toMinor(b.min_amount || 0, 'From amount', true);
-  const max = b.max_amount === '' || b.max_amount == null ? null : toMinor(b.max_amount, 'To amount');
-  if (max != null && max < min) throw bad('“To amount” must be bigger than “From amount”');
-  const value = Number(b.value);
-  if (!Number.isFinite(value) || value < 0) throw bad('Enter the price');
-  const percent = b.fee_type === 'percent';
-  if (percent && value > 100) throw bad('Percent cannot be more than 100');
+  await needCurrency(b.currency);
+  if (!Array.isArray(b.rows) || b.rows.length > 100) throw bad('Invalid price list');
+  const rows = b.rows.map((r, i) => {
+    const line = `Line ${i + 1}: `;
+    const min = toMinor(r.from || 0, line + '“From”', true);
+    const max = r.to === '' || r.to == null ? null : toMinor(r.to, line + '“To”');
+    if (max != null && max < min) throw bad(line + '“To” must be bigger than “From”');
+    const value = Number(r.value), percent = r.type === 'percent';
+    if (r.value === '' || r.value == null || !Number.isFinite(value) || value < 0) throw bad(line + 'enter the price');
+    if (percent && value > 100) throw bad(line + 'percent cannot be more than 100');
+    return { min, max, fee: percent ? 0 : Math.round(value * 100), percent: percent ? value : 0 };
+  }).sort((x, y) => x.min - y.min);
+  rows.forEach((r, i) => {
+    if (i > 0 && (rows[i - 1].max == null || r.min <= rows[i - 1].max)) throw bad(`Two ranges overlap around ${r.min / 100}. Each amount must fall in one range only.`);
+  });
   await tx(async (db) => {
-    await db.q('lock table transfer_fees in exclusive mode');
-    const clash = await db.one(
-      `select 1 from transfer_fees where kind=$1 and provider=$2 and currency=$3 and id <> $4
-       and min_amount <= coalesce($6, 9223372036854775807) and $5 <= coalesce(max_amount, 9223372036854775807)`,
-      [b.kind, provider, b.currency, feeId || 0, min, max]);
-    if (clash) throw bad('This range overlaps another price for the same network and currency');
-    const args = [b.kind, provider, b.currency, min, max, percent ? 0 : Math.round(value * 100), percent ? value : 0];
-    if (feeId) {
-      const rows = await db.q('update transfer_fees set kind=$1, provider=$2, currency=$3, min_amount=$4, max_amount=$5, fee=$6, percent=$7 where id=$8 returning id', [...args, feeId]);
-      if (!rows.length) throw bad('Not found', 404);
-    } else {
-      await db.q('insert into transfer_fees(kind, provider, currency, min_amount, max_amount, fee, percent) values($1,$2,$3,$4,$5,$6,$7)', args);
+    await db.q('delete from transfer_fees where kind=$1 and provider=$2 and currency=$3', [b.kind, provider, b.currency]);
+    for (const r of rows) {
+      await db.q('insert into transfer_fees(kind, provider, currency, min_amount, max_amount, fee, percent) values($1,$2,$3,$4,$5,$6,$7)',
+        [b.kind, provider, b.currency, r.min, r.max, r.fee, r.percent]);
     }
   });
-}
-api.post('/rates/fees', async (req, res) => { await saveFee(req); ok(res); });
-api.put('/rates/fees/:id', async (req, res) => { await saveFee(req, id(req)); ok(res); });
-api.delete('/rates/fees/:id', async (req, res) => { await q('delete from transfer_fees where id=$1', [id(req)]); ok(res); });
+  ok(res);
+});
 
 api.post('/users', async (req, res) => {
   await tx((db) => makeUser(db, req.body.username, req.body.password, req.body.role === 'owner' ? 'owner' : 'viewer'));

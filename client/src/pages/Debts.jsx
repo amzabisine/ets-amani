@@ -24,8 +24,8 @@ export default function Debts() {
         <Op name="debt" args={{ type: 'borrow_repaid' }}>Pay back</Op>
       </Head>
       <div className="grid g2">
-        <Stat label="Total credited — they owe me" usd={d.USD.mine} cdf={d.CDF.mine} color="#b7791f" />
-        <Stat label="Total debited — I owe" usd={d.USD.theirs} cdf={d.CDF.theirs} color="#c0392b" />
+        <Stat label="Total credited — they owe me" by={(c) => d[c].mine} color="#b7791f" />
+        <Stat label="Total debited — I owe" by={(c) => d[c].theirs} color="#c0392b" />
       </div>
       <div className="section">
         <Card title="Balance per person">

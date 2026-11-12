@@ -34,13 +34,14 @@ export const Card = ({ title, right, children }) => (
   </div>
 );
 
-export function Stat({ label, usd, cdf, hero, color, signed, sub }) {
+/** A dashboard figure shown in every currency. `by(currency)` returns the amount in cents. */
+export function Stat({ label, by, hero, color, signed, sub }) {
+  const { S } = useApp();
   const V = signed ? Signed : Money;
   return (
     <div className={`card stat ${hero ? 'hero' : ''}`}>
       <div className="lbl"><i className="dot" style={color ? { background: color } : undefined} />{label}</div>
-      <div className="big"><V v={usd} cur="USD" /></div>
-      <div className="second"><V v={cdf} cur="CDF" /></div>
+      {S.currencies.map((c, i) => <div className={i ? 'second' : 'big'} key={c}><V v={by(c)} cur={c} /></div>)}
       {sub && <div className="sub" style={{ marginTop: 6 }}>{sub}</div>}
     </div>
   );
@@ -164,7 +165,7 @@ export function FormModal({ config, onClose, onDone }) {
             const numeric = f.type === 'money' || f.type === 'rate';
             return (
               <div className="f" key={f.name}>
-                <label htmlFor={id}>{f.label}</label>
+                <label htmlFor={id}>{typeof f.label === 'function' ? f.label(values) : f.label}</label>
                 {f.type === 'select'
                   ? <select {...common}>{optionsOf(f, values).map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}</select>
                   : <input {...common} type={numeric ? 'number' : f.type || 'text'} placeholder={f.placeholder || (numeric ? '0.00' : '')}

@@ -47,14 +47,14 @@ export default function Dashboard() {
       </Head>
 
       <div className="grid g4">
-        <Stat label="Total virtual" usd={total(S, 'virtual', 'USD')} cdf={total(S, 'virtual', 'CDF')} hero />
-        <Stat label="Total cash" usd={total(S, 'cash', 'USD')} cdf={total(S, 'cash', 'CDF')} />
-        <Stat label="Total in bank" usd={total(S, 'bank', 'USD')} cdf={total(S, 'bank', 'CDF')} color="#2563a8" />
-        <Stat label="All money in hand" usd={total(S, null, 'USD')} cdf={total(S, null, 'CDF')} color="#0d1f1c" sub="virtual + cash + bank" />
-        <Stat label="Total credited" usd={d.USD.mine} cdf={d.CDF.mine} color="#b7791f" sub="people who have my money" />
-        <Stat label="Total debited" usd={d.USD.theirs} cdf={d.CDF.theirs} color="#c0392b" sub="money I owe to others" />
-        <Stat label="Today’s profit / loss" usd={profit('USD')} cdf={profit('CDF')} signed color="#0b7a55" />
-        <Stat label="Unpaid rent" usd={rent('USD')} cdf={rent('CDF')} color="#59409a" sub="tenants behind on rent" />
+        <Stat label="Total virtual" by={(c) => total(S, 'virtual', c)} hero />
+        <Stat label="Total cash" by={(c) => total(S, 'cash', c)} />
+        <Stat label="Total in bank" by={(c) => total(S, 'bank', c)} color="#2563a8" />
+        <Stat label="All money in hand" by={(c) => total(S, null, c)} color="#0d1f1c" sub="virtual + cash + bank" />
+        <Stat label="Total credited" by={(c) => d[c].mine} color="#b7791f" sub="people who have my money" />
+        <Stat label="Total debited" by={(c) => d[c].theirs} color="#c0392b" sub="money I owe to others" />
+        <Stat label="Today’s profit / loss" by={profit} signed color="#0b7a55" />
+        <Stat label="Unpaid rent" by={rent} color="#59409a" sub="tenants behind on rent" />
       </div>
 
       <div className="section">

@@ -25,6 +25,7 @@ Single-file prototype used to agree on the features and the look. Replaced by th
 - Moves between own accounts with optional fee
 - Exchange USD ⇄ CDF at the typed rate, profit against a reference rate
 - Rates page: exchange rate per direction and deposit / withdrawal prices per amount range and network; both pre-fill the forms and can be changed per operation
+- Price lists edited several ranges at a time; new currencies and networks can be added by the owner
 
 ## Phase 4 — Customers and debts ✅
 - Customer list and per-customer history
@@ -47,7 +48,7 @@ Single-file prototype used to agree on the features and the look. Replaced by th
 
 ## Phase 8 — Client feedback and Uganda ⏳
 - Changes requested after the demo
-- Uganda: UGX currency, MTN and Airtel Uganda accounts, rates per currency pair
+- Uganda: enter UGX, the Ugandan networks and their rates (adding currencies and networks is already built)
 - French interface (and Swahili if wanted)
 
 ## Phase 9 — Hardening ⏳

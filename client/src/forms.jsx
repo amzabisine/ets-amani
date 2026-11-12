@@ -1,6 +1,7 @@
 // Every operation the owner can do. FORMS open a dialog; ACTIONS run directly.
 import { Signed } from './components.jsx';
-import { acc, accFull, accName, api, exchangeRate, live, n2, transferFee } from './lib.js';
+import FeeList from './FeeList.jsx';
+import { acc, accFull, accName, api, exchangeRate, fmtRate, live, n2, transferFee } from './lib.js';
 
 const accOpts = (list) => list.map((a) => ({ value: a.id, label: `${accFull(a)}  —  ${n2(a.balance, a.currency)} available` }));
 const curOpts = (S) => S.currencies.map((c) => ({ value: c, label: c }));
@@ -66,6 +67,9 @@ export const FORMS = {
 
   exchange(S) {
     const cash = live(S).find((a) => a.kind === 'cash');
+    const pair = (v) => [acc(S, v.from_account_id), acc(S, v.to_account_id)];
+    // The non-USD side decides which reference (cost) rate applies.
+    const refCurrency = (v) => { const [f, t] = pair(v); return !f || !t ? null : f.currency === 'USD' ? t.currency : t.currency === 'USD' ? f.currency : null; };
     return {
       title: 'Currency exchange', intro: 'One currency goes down, the other goes up, according to the rate you type.', submit: 'Record exchange',
       fields: [fDate(S),
@@ -76,24 +80,28 @@ export const FORMS = {
             return accOpts(live(S).filter((a) => f && a.currency !== f.currency).sort((x, y) => (accName(y) === accName(f)) - (accName(x) === accName(f))));
           } },
         { name: 'amount', label: 'Amount you give', type: 'money', required: true },
-        { name: 'rate', label: 'Your rate (1 USD = ? CDF)', type: 'rate', required: true, placeholder: 'e.g. 2850',
+        { name: 'rate', type: 'rate', required: true, placeholder: 'rate',
+          label: (v) => { const [f, t] = pair(v); return f && t ? `Your rate (1 ${f.currency} = ? ${t.currency})` : 'Your rate'; },
           hint: 'Filled from your Rates page for this direction. You can change it.',
-          auto: (v) => { const f = acc(S, v.from_account_id), t = acc(S, v.to_account_id); return String((f && t && exchangeRate(S, f.currency, t.currency)) || ''); } },
-        { name: 'ref_rate', label: 'Reference rate (your cost)', type: 'rate', value: S.settings.ref_rate || '',
-          hint: 'Used only to calculate your profit on this exchange. Change the default in Settings.' },
+          auto: (v) => { const [f, t] = pair(v); return String((f && t && exchangeRate(S, f.currency, t.currency)) || ''); } },
+        { name: 'ref_rate', type: 'rate',
+          label: (v) => (refCurrency(v) ? `Reference rate (1 USD = ? ${refCurrency(v)})` : 'Reference rate'),
+          hint: 'Your cost. Used only to calculate your profit on this exchange.',
+          auto: (v) => String(S.settings.ref_rates[refCurrency(v)] || '') },
         ...fCustomer(S), fNote],
       info(v) {
-        const f = acc(S, v.from_account_id), t = acc(S, v.to_account_id);
+        const [f, t] = pair(v);
         const amt = Math.round(Number(v.amount) * 100), rate = Number(v.rate), ref = Number(v.ref_rate);
         if (!f) return null;
         const ok = t && amt > 0 && rate > 0;
-        const got = ok ? Math.round(t.currency === 'USD' ? amt / rate : amt * rate) : 0;
+        const got = ok ? Math.round(amt * rate) : 0;
         const profit = f.currency === 'USD' ? got - Math.round(amt * ref) : Math.round(got * ref) - amt;
         return (
           <>
             <Avail a={f} />
             {ok && <><br />You give <b>{n2(amt, f.currency)} {f.currency}</b> and receive <b>{n2(got, t.currency)} {t.currency}</b></>}
-            {ok && ref > 0 && <><br />Profit on this exchange: <Signed v={profit} cur={f.currency === 'USD' ? t.currency : f.currency} /></>}
+            {ok && rate < 1 && <><br /><span className="muted">Same as 1 {t.currency} = {fmtRate(1 / rate)} {f.currency}</span></>}
+            {ok && ref > 0 && refCurrency(v) && <><br />Profit on this exchange: <Signed v={profit} cur={refCurrency(v)} /></>}
           </>
         );
       },
@@ -234,40 +242,54 @@ export const FORMS = {
   },
 
   exRate(S, { from, to }) {
-    const other = from === 'USD' ? to : to === 'USD' ? from : null;
     return {
       title: `Rate when I give ${from} and receive ${to}`,
-      intro: 'Used to pre-fill the exchange form for this direction.',
-      fields: [{ name: 'rate', label: other ? `1 USD = ? ${other}` : `1 ${from} = ? ${to}`, type: 'rate', value: exchangeRate(S, from, to) || '', required: true }],
+      intro: `How many ${to} I receive for 1 ${from}. Used to pre-fill the exchange form for this direction.`,
+      fields: [{ name: 'rate', label: `1 ${from} = ? ${to}`, type: 'rate', value: exchangeRate(S, from, to) || '', required: true, placeholder: 'rate' }],
+      info: (v) => (Number(v.rate) > 0 ? <>Same as 1 {to} = <b>{fmtRate(1 / Number(v.rate))} {from}</b></> : null),
       onSubmit: (v) => api('PUT', '/rates/exchange', { from_currency: from, to_currency: to, rate: v.rate }),
     };
   },
 
-  fee(S, { id, kind = 'withdraw' } = {}) {
-    const f = id && S.rates.fees.find((x) => x.id === Number(id));
-    const networks = [...new Set(live(S).filter((a) => a.kind === 'virtual').map((a) => a.provider))];
-    if (f?.provider && !networks.includes(f.provider)) networks.push(f.provider);
+  /** Reference (cost) rate of one currency against USD. */
+  rate(S, { currency }) {
     return {
-      title: f ? 'Edit price range' : 'New price range',
-      intro: 'The commission you charge when the amount falls in this range.',
-      fields: [
-        { name: 'kind', label: 'Operation', type: 'select', value: f?.kind || kind, options: [{ value: 'withdraw', label: 'Withdrawal' }, { value: 'deposit', label: 'Deposit' }] },
-        { name: 'provider', label: 'Network', type: 'select', value: f?.provider || '', options: [{ value: '', label: 'All networks' }, ...networks.map((n) => ({ value: n, label: n }))] },
-        { name: 'currency', label: 'Currency', type: 'select', value: f?.currency, options: curOpts(S) },
-        { name: 'min_amount', label: 'From amount', type: 'money', value: f ? f.min_amount / 100 : '', placeholder: '0' },
-        { name: 'max_amount', label: 'To amount', type: 'money', value: f?.max_amount != null ? f.max_amount / 100 : '', placeholder: 'no limit', hint: 'Leave empty for “and above”.' },
-        { name: 'fee_type', label: 'Price is', type: 'select', value: f?.percent ? 'percent' : 'fixed', options: [{ value: 'fixed', label: 'A fixed amount' }, { value: 'percent', label: 'A percentage of the amount' }] },
-        { name: 'value', label: 'Price', type: 'money', value: f ? (f.percent || f.fee / 100) : '', required: true }],
-      info: (v) => (v.fee_type === 'percent' ? <>Price: <b>{v.value || 0} %</b> of the amount</> : <>Price: <b>{v.value || 0} {v.currency}</b> per operation</>),
-      onSubmit: (v) => api(f ? 'PUT' : 'POST', '/rates/fees' + (f ? '/' + f.id : ''), v),
+      title: `Reference rate for ${currency}`, intro: 'Your cost rate. Exchange profit is measured against it.',
+      fields: [{ name: 'ref_rate', label: `1 USD = ? ${currency}`, type: 'rate', value: S.settings.ref_rates[currency] || '', required: true, placeholder: 'rate' }],
+      onSubmit: (v) => api('PUT', '/settings', { ...v, currency }),
     };
   },
 
-  rate(S) {
+  /** Price list editor: several ranges at once (its own dialog, see FeeList.jsx). */
+  feeList(S, args = {}) {
+    return { custom: FeeList, S, ...args };
+  },
+
+  /** A new mobile money network: one account per chosen currency. */
+  network(S) {
     return {
-      title: 'Reference exchange rate', intro: 'Your cost rate. Exchange profit is measured against it.',
-      fields: [{ name: 'ref_rate', label: '1 USD = ? CDF', type: 'rate', value: S.settings.ref_rate || '', required: true }],
-      onSubmit: (v) => api('PUT', '/settings', v),
+      title: 'New network', intro: 'For example Africell Money or MTN. One account is created for each currency you tick.',
+      fields: [
+        { name: 'provider', label: 'Network name', required: true, placeholder: 'e.g. Africell Money' },
+        { name: 'label', label: 'Sub-account (optional)', placeholder: 'e.g. Float, Org' },
+        ...S.currencies.map((c) => ({ name: 'cur_' + c, label: `Account in ${c}`, type: 'check', value: true })),
+        { name: 'on_dashboard', label: 'Show on the dashboard', type: 'check', value: true }],
+      async onSubmit(v) {
+        const chosen = S.currencies.filter((c) => v['cur_' + c]);
+        if (!chosen.length) throw new Error('Tick at least one currency');
+        for (const currency of chosen) await api('POST', '/accounts', { provider: v.provider, label: v.label, kind: 'virtual', currency, on_dashboard: v.on_dashboard });
+      },
+    };
+  },
+
+  currency() {
+    return {
+      title: 'New currency', intro: 'For example UGX for Uganda. After adding it, set its rates on the Rates page.',
+      fields: [
+        { name: 'code', label: 'Code (3 letters)', required: true, placeholder: 'e.g. UGX' },
+        { name: 'name', label: 'Name (optional)', placeholder: 'e.g. Ugandan Shilling' },
+        { name: 'with_accounts', label: 'Create Cash and Bank accounts in this currency', type: 'check', value: true }],
+      onSubmit: (v) => api('POST', '/currencies', v),
     };
   },
 };
@@ -283,11 +305,6 @@ export const ACTIONS = {
     if (!window.confirm('Delete this customer?')) return null;
     await api('DELETE', '/customers/' + id);
     return 'Customer deleted';
-  },
-  async delFee(S, { id }) {
-    if (!window.confirm('Delete this price range?')) return null;
-    await api('DELETE', '/rates/fees/' + id);
-    return 'Price range deleted';
   },
   async delUser(S, { id }) {
     if (!window.confirm('Remove this user?')) return null;
