@@ -28,7 +28,7 @@ const NAV = [
   [null, 'Records'],
   ['/accounts', 'Accounts', '<rect x="2" y="6" width="20" height="13" rx="2"/><path d="M2 10h20M6 15h4"/>'],
   ['/customers', 'Customers', '<circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/>'],
-  ['/reports', 'Reports', '<path d="M4 20V4M4 20h16M8 16v-5M12 16V8M16 16v-3"/>'],
+  ['/reports', 'Daily report', '<path d="M4 20V4M4 20h16M8 16v-5M12 16V8M16 16v-3"/>'],
   ['/settings', 'Settings', '<circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M5 5l2 2M17 17l2 2M19 5l-2 2M7 17l-2 2"/>'],
 ];
 const Logo = () => (

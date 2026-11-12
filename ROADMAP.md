@@ -39,7 +39,8 @@ Single-file prototype used to agree on the features and the look. Replaced by th
 - Other income and expenses by category
 
 ## Phase 6 — Reports ✅
-- Profit and loss by source for any period
+- Daily report (or any period): cash position per account (start, in, out, end), result by source, expenses by category, forex bureau summary
+- Expense categories (rent paid, salaries, internet…) with the option to add your own
 - Full operation history with filters, CSV download, print
 
 ## Phase 7 — Go live 🔜

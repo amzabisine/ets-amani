@@ -42,11 +42,13 @@ export function Money() {
   const rows = useTxns({ types: 'expense,income' });
   return (
     <>
-      <Head title="Income & expenses" sub="Everything else that makes you gain or lose money">
+      <Head title="Income & expenses" sub="Rent you pay, salaries, internet, electricity and any other cost or income">
         <Op name="pnl" args={{ type: 'expense' }} cls="primary">+ Expense</Op>
         <Op name="pnl" args={{ type: 'income' }}>+ Other income</Op>
       </Head>
-      <Card><TxnTable rows={rows} empty="No income or expense recorded yet." /></Card>
+      <Card title="Operations" right={<Link className="btn sm" to="/reports">See totals by category</Link>}>
+        <TxnTable rows={rows} empty="No income or expense recorded yet." />
+      </Card>
     </>
   );
 }

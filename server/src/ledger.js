@@ -46,7 +46,7 @@ export async function createTxn(db, b, user) {
   const t = {
     date: isDate(b.date) ? b.date : today(), type, currency: null, amount: 0, to_currency: null, to_amount: null,
     rate: null, ref_rate: null, customer_id: null, rental_id: null, period: null,
-    category: str(b.category, 60), note: str(b.note, 300), debt_delta: 0, pnl: 0, pnl_currency: null,
+    category: str(b.new_category, 60) || str(b.category, 60), note: str(b.note, 300), debt_delta: 0, pnl: 0, pnl_currency: null,
   };
   const entries = [];
   const move = (acc, amt) => { if (amt !== 0) entries.push({ acc, amt }); };
@@ -196,6 +196,8 @@ export async function getState(user, day) {
     settings: { ref_rates: Object.fromEntries((await q("select key, value from settings where key like 'ref_rate_%'")).map((r) => [r.key.slice(9), Number(r.value)])) },
     today: { date: day, pnl: await q('select type, pnl_currency currency, sum(pnl) total from txns where date=$1 and pnl <> 0 group by type, pnl_currency', [day]) },
     recent: await listTxns({ limit: 10 }),
+    // categories already used, so the forms can offer them again
+    categories: await q("select type, category from txns where type in ('expense', 'income') and category <> '' group by type, category order by count(*) desc"),
     rates: {
       exchange: await q('select * from exchange_rates order by from_currency, to_currency'),
       fees: await q('select * from transfer_fees order by kind desc, provider, currency, min_amount'),
@@ -205,10 +207,29 @@ export async function getState(user, day) {
   return state;
 }
 
+/** The figures of a day or a period: where the money was, what came in and went out, and why. */
 export async function report(from, to) {
+  const range = [from, to];
   return {
     from, to,
-    pnl: await q('select type, pnl_currency currency, sum(pnl) total, count(*)::int n from txns where date between $1 and $2 and pnl <> 0 group by type, pnl_currency', [from, to]),
-    volume: await q('select type, currency, sum(amount) total, count(*)::int n from txns where date between $1 and $2 group by type, currency', [from, to]),
+    // per account: balance before the period, money in and out during it
+    accounts: await q(
+      `select a.id,
+         coalesce(sum(e.amount) filter (where t.date < $1), 0) opening,
+         coalesce(sum(e.amount) filter (where t.date between $1 and $2 and e.amount > 0), 0) money_in,
+         coalesce(-sum(e.amount) filter (where t.date between $1 and $2 and e.amount < 0), 0) money_out
+       from accounts a left join entries e on e.account_id = a.id left join txns t on t.id = e.txn_id
+       group by a.id`, range),
+    // profit and loss by source
+    pnl: await q('select type, pnl_currency currency, sum(pnl) total, count(*)::int n from txns where date between $1 and $2 and pnl <> 0 group by type, pnl_currency', range),
+    // expenses and other income by category
+    categories: await q(
+      `select type, category, currency, sum(amount) total, count(*)::int n from txns
+       where date between $1 and $2 and type in ('expense', 'income') group by type, category, currency order by sum(amount) desc`, range),
+    // forex bureau: what was given and received in each direction
+    exchange: await q(
+      `select currency, to_currency, sum(amount) given, sum(to_amount) received, coalesce(sum(pnl), 0) pnl, max(pnl_currency) pnl_currency, count(*)::int n
+       from txns where date between $1 and $2 and type = 'exchange' group by currency, to_currency order by currency, to_currency`, range),
+    volume: await q('select type, currency, sum(amount) total, count(*)::int n from txns where date between $1 and $2 group by type, currency', range),
   };
 }

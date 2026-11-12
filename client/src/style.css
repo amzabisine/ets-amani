@@ -158,3 +158,8 @@ input:focus,select:focus,textarea:focus{outline:2px solid rgba(15,138,108,.25);b
 @media (max-width:560px){.row3{grid-template-columns:1fr}.range{grid-template-columns:1fr 1fr 1fr 70px 30px;gap:5px}}
 
 .t td.owner-only{white-space:nowrap}
+
+/* report */
+.t tr.group td{background:#f3f6f4;font-size:11.5px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);padding:7px 14px}
+.t tr.total td{font-weight:700}
+@media print{.card{break-inside:avoid;border-color:#ccc}.section{margin-top:12px}.t td,.t th{padding:6px 10px}.owner-only{display:none!important}.ro{display:none}}

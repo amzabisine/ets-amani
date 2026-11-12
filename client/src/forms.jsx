@@ -14,6 +14,14 @@ const fCustomer = (S, id, required, label) => [
   },
   { name: 'new_customer', label: '…or type a new customer name', placeholder: 'New customer' },
 ];
+// The usual categories first, then any others already used.
+const CATEGORIES = {
+  expense: ['Rent paid', 'Salaries', 'Internet / Wi-Fi', 'Electricity', 'Water', 'Transport', 'Airtime', 'Taxes and fees', 'Maintenance', 'Office supplies', 'Other'],
+  income: ['Operator commission', 'Sales', 'Other'],
+};
+const categoryOptions = (S, type) =>
+  [...new Set([...CATEGORIES[type], ...S.categories.filter((c) => c.type === type).map((c) => c.category)])].map((c) => ({ value: c, label: c }));
+
 const post = (type) => (v) => api('POST', '/txns', { ...v, type });
 
 const Avail = ({ a }) => (a ? <>Available in <b>{accFull(a)}</b>: <b>{n2(a.balance, a.currency)} {a.currency}</b></> : null);
@@ -155,7 +163,8 @@ export const FORMS = {
     return {
       title: inn ? 'Record other income' : 'Record an expense',
       fields: [fDate(S),
-        { name: 'category', label: 'Category', required: true, placeholder: inn ? 'e.g. Operator commission, Sale' : 'e.g. Salary, Transport, Shop rent' },
+        { name: 'category', label: 'Category', type: 'select', options: categoryOptions(S, type) },
+        { name: 'new_category', label: '…or type a new category', placeholder: inn ? 'e.g. Sale of airtime' : 'e.g. Security guard' },
         { name: 'account_id', label: inn ? 'Received in' : 'Paid from', type: 'select', options: accOpts(live(S)) },
         { name: 'amount', label: 'Amount', type: 'money', required: true }, fNote],
       info: (v) => (inn ? null : <Avail a={acc(S, v.account_id)} />),
