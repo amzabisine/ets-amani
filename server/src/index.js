@@ -2,7 +2,7 @@ import express from 'express';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { one, q, tx } from './db.js';
+import { isConnectionError, one, q, tx } from './db.js';
 import { checkPassword, clearThrottle, endSession, makeUser, requireOwner, requireUser, sessionUser, setPassword, startSession, throttle } from './auth.js';
 import { balanceOf, createTxn, currencyCodes, customerId, deleteTxn, getState, listTxns, report, seedAccounts } from './ledger.js';
 import { bad, isDate, str, toMinor, today } from './util.js';
@@ -235,6 +235,10 @@ if (fs.existsSync(dist)) {
 }
 
 app.use((err, req, res, next) => {
+  if (isConnectionError(err) && !err.status) {
+    console.error('Cannot reach the database:', err.message);
+    return res.status(503).json({ error: 'Cannot reach the database. Check the internet connection and try again.' });
+  }
   const status = err.status || err.statusCode;
   if (!status || status >= 500) console.error(err);
   res.status(status && status < 500 ? status : 500).json({ error: status && status < 500 ? err.message : 'Something went wrong on the server' });
