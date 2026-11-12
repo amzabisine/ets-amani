@@ -1,7 +1,7 @@
 // Every operation the owner can do. FORMS open a dialog; ACTIONS run directly.
 import { Signed } from './components.jsx';
 import FeeList from './FeeList.jsx';
-import { acc, accFull, accName, api, exchangeRate, fmtRate, live, n2, transferFee } from './lib.js';
+import { RENTAL_TYPES, SHOW_DEPOSIT_WITHDRAW, acc, accFull, accName, api, exchangeRate, fmtRate, live, n2, transferFee } from './lib.js';
 
 const accOpts = (list) => list.map((a) => ({ value: a.id, label: `${accFull(a)}  —  ${n2(a.balance, a.currency)} available` }));
 const curOpts = (S) => S.currencies.map((c) => ({ value: c, label: c }));
@@ -24,7 +24,7 @@ export const FORMS = {
     const [title, intro, outList, inList] = {
       deposit: ['Customer deposit', 'The customer gives you cash, you send e-money. Virtual goes down, cash goes up.', virt, cashish],
       withdraw: ['Customer withdrawal', 'The customer sends you e-money, you give cash. Cash goes down, virtual goes up.', cashish, virt],
-      other: ['Other transfer', 'Any customer transfer between two of your accounts in the same currency.', live(S), live(S)],
+      other: [SHOW_DEPOSIT_WITHDRAW ? 'Other transfer' : 'Transfer', 'A customer transfer between two of your accounts in the same currency.', live(S), live(S)],
     }[mode];
     // The price list is per network: the virtual side of the transfer decides which one applies.
     const price = (v) => {
@@ -163,34 +163,61 @@ export const FORMS = {
     };
   },
 
-  rental(S) {
+  rental(S, { id, type } = {}) {
+    const r = id && S.rentals.find((x) => x.id === Number(id));
+    const spec = (v) => RENTAL_TYPES[v.type] || RENTAL_TYPES.other;
+    // One input per attribute of every type; only those of the chosen type are shown.
+    const detailFields = Object.entries(RENTAL_TYPES).flatMap(([t, s]) => s.fields.map(([key, label]) => (
+      { name: `d_${t}_${key}`, label, value: r?.type === t ? r.details[key] : '', show: (v) => v.type === t })));
     return {
-      title: 'New rental', intro: 'A house, room or shop you rent out to someone.',
-      fields: [{ name: 'property', label: 'Property', required: true, placeholder: 'e.g. Shop n°2 — Avenue du Lac' },
-        ...fCustomer(S, null, true, 'Tenant'),
-        { name: 'monthly', label: 'Rent per month', type: 'money', required: true },
-        { name: 'currency', label: 'Currency', type: 'select', options: curOpts(S) },
-        { name: 'start_month', label: 'First month of rent', type: 'month', value: S.today.date.slice(0, 7), required: true }, fNote],
-      onSubmit: (v) => api('POST', '/rentals', v),
+      title: r ? 'Edit rental' : 'New rental', intro: 'A car, apartment, shop or anything else you rent out to someone.',
+      fields: [
+        { name: 'type', label: 'What do you rent out?', type: 'select', value: r?.type || type || 'apartment', options: Object.entries(RENTAL_TYPES).map(([value, s]) => ({ value, label: s.label })) },
+        { name: 'property', label: 'Name', required: true, value: r?.property, placeholder: 'A short name to recognise it' },
+        ...detailFields,
+        ...(r ? [] : fCustomer(S, null, true, 'Tenant / renter')),
+        { name: 'period_unit', label: 'Rent is charged', type: 'select', value: r?.period_unit, auto: r ? undefined : (v) => spec(v).unit,
+          options: [{ value: 'day', label: 'Per day' }, { value: 'week', label: 'Per week' }, { value: 'month', label: 'Per month' }] },
+        { name: 'rate', label: (v) => `Price per ${v.period_unit}`, type: 'money', required: true, value: r ? r.rate / 100 : '' },
+        ...(r ? [] : [{ name: 'currency', label: 'Currency', type: 'select', options: curOpts(S) }]),
+        { name: 'start_date', label: 'Start date', type: 'date', value: r?.start_date || S.today.date, required: true },
+        { name: 'end_date', label: (v) => (v.type === 'car' ? 'Return date' : 'End date (optional)'), type: 'date', value: r?.end_date || '',
+          hint: 'Rent stops counting after this date. Leave empty if there is no fixed end.' },
+        { ...fNote, value: r?.note }],
+      info(v) {
+        const rate = Math.round(Number(v.rate) * 100);
+        if (!(rate > 0) || !v.start_date || !v.end_date || v.end_date < v.start_date) return null;
+        const days = Math.round((Date.parse(v.end_date) - Date.parse(v.start_date)) / 86400000) + 1;
+        const [y1, m1] = v.start_date.split('-').map(Number), [y2, m2] = v.end_date.split('-').map(Number);
+        const n = v.period_unit === 'day' ? days : v.period_unit === 'week' ? Math.ceil(days / 7) : (y2 - y1) * 12 + (m2 - m1) + 1;
+        const cur = r ? r.currency : v.currency;
+        return <>{n} {v.period_unit}{n > 1 ? 's' : ''} × {n2(rate, cur)} = <b>{n2(n * rate, cur)} {cur}</b> for the whole rental</>;
+      },
+      onSubmit(v) {
+        const details = Object.fromEntries(spec(v).fields.map(([key]) => [key, v[`d_${v.type}_${key}`]]));
+        return api(r ? 'PUT' : 'POST', '/rentals' + (r ? '/' + r.id : ''), { ...v, details });
+      },
     };
   },
 
   rentPay(S, { id } = {}) {
-    const list = S.rentals.filter((r) => r.active || r.outstanding > 0);
+    const list = S.rentals.filter((r) => !r.finished || r.outstanding > 0);
     if (!list.length) throw new Error('Add a rental first');
     const rental = (v) => S.rentals.find((x) => x.id === Number(v.rental_id));
     return {
       title: 'Receive rent',
       fields: [fDate(S),
         { name: 'rental_id', label: 'Rental', type: 'select', value: id, options: list.map((r) => ({ value: r.id, label: `${r.property} — ${r.customer_name}` })) },
-        { name: 'period', label: 'Payment is for the month of', type: 'month', value: S.today.date.slice(0, 7), required: true },
+        { name: 'period', label: 'Payment is for the month of', type: 'month', value: S.today.date.slice(0, 7), required: true, show: (v) => rental(v)?.period_unit === 'month' },
         { name: 'account_id', label: 'Received in', type: 'select', options: (v) => accOpts(live(S).filter((a) => a.currency === rental(v)?.currency)) },
-        { name: 'amount', label: 'Amount', type: 'money', required: true }, fNote],
+        { name: 'amount', label: 'Amount', type: 'money', required: true,
+          auto: (v) => { const r = rental(v); return r && r.outstanding > 0 ? String(r.outstanding / 100) : ''; } },
+        fNote],
       info(v) {
         const r = rental(v);
         if (!r) return null;
         return (
-          <>Rent: <b>{n2(r.monthly, r.currency)} {r.currency}</b> per month · {r.outstanding > 0
+          <>Rent: <b>{n2(r.rate, r.currency)} {r.currency}</b> per {r.period_unit} · {r.outstanding > 0
             ? <>still unpaid: <b className="neg">{n2(r.outstanding, r.currency)} {r.currency}</b></>
             : r.outstanding < 0 ? <>paid in advance: <b>{n2(-r.outstanding, r.currency)} {r.currency}</b></> : 'up to date'}</>
         );
@@ -313,8 +340,8 @@ export const ACTIONS = {
   },
   async rentalToggle(S, { id }) {
     const r = S.rentals.find((x) => x.id === Number(id));
-    if (!window.confirm(r.active ? `End the rental “${r.property}”? No new rent will be expected after this month.` : `Re-open the rental “${r.property}”?`)) return null;
-    await api('PUT', '/rentals/' + id, { active: !r.active });
+    if (!window.confirm(r.active ? `End the rental “${r.property}” today? No more rent will be counted after today.` : `Re-open the rental “${r.property}”?`)) return null;
+    await api('PUT', `/rentals/${id}/active`, { active: !r.active, today: S.today.date });
     return r.active ? 'Rental ended' : 'Rental re-opened';
   },
 };

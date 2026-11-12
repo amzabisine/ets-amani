@@ -104,6 +104,7 @@ function settle(fields, values, touched) {
   const v = { ...values };
   for (const f of fields) {
     if (f.type === 'select') {
+      if (f.auto && !touched.has(f.name)) v[f.name] = f.auto(v);
       const list = optionsOf(f, v);
       if (!list.some((o) => String(o.value) === String(v[f.name]))) v[f.name] = list[0] ? String(list[0].value) : '';
     } else if (f.auto && !touched.has(f.name)) {
@@ -116,6 +117,7 @@ function settle(fields, values, touched) {
 export function FormModal({ config, onClose, onDone }) {
   const { fields } = config;
   const touched = useRef(new Set());
+  // A field can have `show: (values) => boolean`; hidden fields are neither displayed nor required.
   const [values, setValues] = useState(() =>
     settle(fields, Object.fromEntries(fields.map((f) => [f.name, f.type === 'check' ? !!f.value : String(f.value ?? '')])), touched.current));
   const [error, setError] = useState('');
@@ -151,7 +153,7 @@ export function FormModal({ config, onClose, onDone }) {
           <button className="x" onClick={onClose} aria-label="Close">×</button>
         </header>
         <form ref={formRef} onSubmit={submit}>
-          {fields.map((f) => {
+          {fields.filter((f) => !f.show || f.show(values)).map((f) => {
             const id = 'f_' + f.name;
             if (f.type === 'check') {
               return (

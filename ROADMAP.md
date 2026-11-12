@@ -25,6 +25,7 @@ Single-file prototype used to agree on the features and the look. Replaced by th
 - Moves between own accounts with optional fee
 - Exchange USD ⇄ CDF at the typed rate, profit against a reference rate
 - Rates page: exchange rate per direction and deposit / withdrawal prices per amount range and network; both pre-fill the forms and can be changed per operation
+- Deposit / Withdrawal buttons and their price lists are built but hidden for now (`SHOW_DEPOSIT_WITHDRAW` in `client/src/lib.js`)
 - Price lists edited several ranges at a time; new currencies and networks can be added by the owner
 
 ## Phase 4 — Customers and debts ✅
@@ -33,7 +34,8 @@ Single-file prototype used to agree on the features and the look. Replaced by th
 - "They have my money" / "I have their money" per person and in total
 
 ## Phase 5 — Rentals, income and expenses ✅
-- Properties, tenants, monthly rent, payments per month, who is behind
+- Rentals by type (car, apartment, house, shop, land, other), each with its own attributes
+- Rent charged per day, week or month, with an optional return / end date; payments and who is behind
 - Other income and expenses by category
 
 ## Phase 6 — Reports ✅

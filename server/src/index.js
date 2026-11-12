@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { one, q, tx } from './db.js';
 import { checkPassword, clearThrottle, endSession, makeUser, requireOwner, requireUser, sessionUser, setPassword, startSession, throttle } from './auth.js';
 import { balanceOf, createTxn, currencyCodes, customerId, deleteTxn, getState, listTxns, report, seedAccounts } from './ledger.js';
-import { bad, isDate, isMonth, str, toMinor, today } from './util.js';
+import { bad, isDate, str, toMinor, today } from './util.js';
 
 const app = express();
 app.set('trust proxy', 1);
@@ -103,22 +103,45 @@ api.delete('/customers/:id', async (req, res) => {
   ok(res);
 });
 
+const RENTAL_TYPES = ['car', 'apartment', 'house', 'shop', 'land', 'other'];
+/** Checks a rental form and returns clean values. */
+async function rentalFields(b) {
+  const property = str(b.property, 80);
+  if (!property) throw bad('Enter the name');
+  if (!RENTAL_TYPES.includes(b.type)) throw bad('Choose the type of rental');
+  if (!['day', 'week', 'month'].includes(b.period_unit)) throw bad('Choose how the rent is charged');
+  if (!isDate(b.start_date)) throw bad('Choose the start date');
+  const end = b.end_date ? b.end_date : null;
+  if (end && (!isDate(end) || end < b.start_date)) throw bad('The end date must be after the start date');
+  // details: the attributes of the type, e.g. { plate: 'CGO 1234 AB' }
+  const details = {};
+  for (const [k, v] of Object.entries(b.details && typeof b.details === 'object' ? b.details : {}).slice(0, 12)) {
+    if (/^[a-z_]{1,30}$/.test(k) && str(v, 120)) details[k] = str(v, 120);
+  }
+  return { property, type: b.type, unit: b.period_unit, start: b.start_date, end, details: JSON.stringify(details), rate: toMinor(b.rate, 'Price'), note: str(b.note, 300) };
+}
 api.post('/rentals', async (req, res) => {
-  const b = req.body, property = str(b.property, 80);
-  if (!property) throw bad('Enter the property name');
-  await needCurrency(b.currency);
-  if (!isMonth(b.start_month)) throw bad('Choose the first month of rent');
-  const monthly = toMinor(b.monthly, 'Monthly rent');
+  const f = await rentalFields(req.body);
+  await needCurrency(req.body.currency);
   await tx(async (db) => {
-    await db.q('insert into rentals(property, customer_id, monthly, currency, start_month, note) values($1,$2,$3,$4,$5,$6)',
-      [property, await customerId(db, b, true), monthly, b.currency, b.start_month, str(b.note, 300)]);
+    await db.q('insert into rentals(property, type, details, customer_id, rate, period_unit, currency, start_date, end_date, note) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)',
+      [f.property, f.type, f.details, await customerId(db, req.body, true), f.rate, f.unit, req.body.currency, f.start, f.end, f.note]);
   });
   ok(res);
 });
 api.put('/rentals/:id', async (req, res) => {
-  const active = !!req.body.active;
-  const rows = await q('update rentals set active=$1, end_month=$2 where id=$3 returning id',
-    [active, active ? null : (isMonth(req.body.end_month) ? req.body.end_month : today().slice(0, 7)), id(req)]);
+  const f = await rentalFields(req.body); // the tenant and the currency stay as they are: payments already refer to them
+  const rows = await q('update rentals set property=$1, type=$2, details=$3, rate=$4, period_unit=$5, start_date=$6, end_date=$7, note=$8 where id=$9 returning id',
+    [f.property, f.type, f.details, f.rate, f.unit, f.start, f.end, f.note, id(req)]);
+  if (!rows.length) throw bad('Rental not found', 404);
+  ok(res);
+});
+// End a rental today (rent stops counting), or re-open it.
+api.put('/rentals/:id/active', async (req, res) => {
+  const active = !!req.body.active, day = isDate(req.body.today) ? req.body.today : today();
+  const rows = await q(
+    `update rentals set active=$1, end_date = case when $1 then null when end_date is not null and end_date < $2::date then end_date else $2::date end where id=$3 returning id`,
+    [active, day, id(req)]);
   if (!rows.length) throw bad('Rental not found', 404);
   ok(res);
 });

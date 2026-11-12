@@ -78,6 +78,21 @@ export function transferFee(S, kind, provider, currency, amount) {
   return row ? Math.round(row.fee + (amount * row.percent) / 100) : null;
 }
 
+// Deposit / Withdrawal buttons and their price lists are hidden for now.
+// Set this to true to bring them back; nothing was deleted.
+export const SHOW_DEPOSIT_WITHDRAW = false;
+
+/* Rental types: each has its own attributes, and a usual way of charging. */
+export const RENTAL_TYPES = {
+  car: { label: 'Car', plural: 'Cars', unit: 'day', name: 'e.g. Toyota Hilux white', fields: [['make_model', 'Make and model'], ['plate', 'Plate number'], ['colour', 'Colour'], ['mileage', 'Mileage at start (km)'], ['licence', 'Renter’s ID / driving licence n°']] },
+  apartment: { label: 'Apartment', plural: 'Apartments', unit: 'month', name: 'e.g. Apartment 3 — Av. du Lac', fields: [['address', 'Address'], ['rooms', 'Number of rooms'], ['door', 'Floor / door n°'], ['furnished', 'Furnished? (yes / no)']] },
+  house: { label: 'House', plural: 'Houses', unit: 'month', name: 'e.g. House Himbi', fields: [['address', 'Address'], ['rooms', 'Number of rooms'], ['furnished', 'Furnished? (yes / no)']] },
+  shop: { label: 'Shop', plural: 'Shops', unit: 'month', name: 'e.g. Shop n°2 — Birere', fields: [['address', 'Address / location'], ['size', 'Size (m²)'], ['activity', 'Tenant’s activity']] },
+  land: { label: 'Land', plural: 'Land', unit: 'month', name: 'e.g. Plot Kyeshero', fields: [['address', 'Location'], ['size', 'Size'], ['use', 'Used for']] },
+  other: { label: 'Other', plural: 'Other', unit: 'month', name: 'What is rented', fields: [['description', 'Description']] },
+};
+export const UNITS = { day: 'day', week: 'week', month: 'month' };
+
 export const TYPES = {
   capital_in: ['Capital added', 'b'], capital_out: ['Capital withdrawn', 'y'], transfer: ['Transfer', 'g'],
   move: ['Internal move', ''], exchange: ['Exchange', 'p'], loan_given: ['Money lent', 'r'],
@@ -103,7 +118,7 @@ export function describe(S, t) {
     case 'loan_repaid': case 'borrowed': return `Received in ${accName(to)}`;
     case 'rent_payment': {
       const r = S.rentals.find((x) => x.id === t.rental_id);
-      return `${r ? r.property : 'Rent'} · ${t.period} · in ${accName(to)}`;
+      return `${r ? r.property : 'Rent'}${t.period ? ' · ' + t.period : ''} · in ${accName(to)}`;
     }
     case 'expense': return `${t.category} · from ${accName(from)}`;
     case 'income': return `${t.category} · in ${accName(to)}`;

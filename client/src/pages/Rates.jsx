@@ -1,5 +1,5 @@
 import { Card, Empty, Head, Money, Op } from '../components.jsx';
-import { exchangeRate, fmtRate, n2, useApp } from '../lib.js';
+import { SHOW_DEPOSIT_WITHDRAW, exchangeRate, fmtRate, n2, useApp } from '../lib.js';
 
 const KINDS = [['withdraw', 'Withdrawal prices'], ['deposit', 'Deposit prices']];
 
@@ -39,7 +39,7 @@ export default function Rates() {
   const others = S.currencies.filter((c) => c !== 'USD');
   return (
     <>
-      <Head title="Rates" sub="Your price list. It fills the exchange and transfer forms for you; you can still change the figure on any operation.">
+      <Head title="Rates" sub="Your rates. They fill the exchange form for you; you can still change the figure on any operation.">
         <Op name="currency">+ Add currency</Op>
         <Op name="network">+ Add network</Op>
       </Head>
@@ -88,7 +88,7 @@ export default function Rates() {
         </Card>
       </div>
 
-      {KINDS.map(([kind, title]) => (
+      {SHOW_DEPOSIT_WITHDRAW && KINDS.map(([kind, title]) => (
         <div className="section" key={kind}>
           <Card title={title} right={<span className="owner-only"><Op name="feeList" args={{ kind }} cls="sm">+ Add price ranges</Op></span>}>
             <FeeLists kind={kind} />

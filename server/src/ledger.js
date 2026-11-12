@@ -1,7 +1,7 @@
 // The heart of the system: every operation moves money between accounts,
 // and money can never leave an account that does not hold it.
 import { q } from './db.js';
-import { accName, bad, fmt, isDate, isMonth, monthsBetween, str, toMinor, today } from './util.js';
+import { accName, bad, fmt, isDate, isMonth, periodsDue, str, toMinor, today } from './util.js';
 
 const SEED = [
   ['Airtel Money', '', 'virtual'], ['M-Pesa', 'Org Account', 'virtual'], ['M-Pesa', 'Float Account', 'virtual'],
@@ -101,7 +101,9 @@ export async function createTxn(db, b, user) {
     if (!r) throw bad('Please choose a rental');
     const a = await account(db, b.account_id), amt = toMinor(b.amount);
     if (a.currency !== r.currency) throw bad(`This rent is in ${r.currency}; choose a ${r.currency} account`);
-    if (!isMonth(b.period)) throw bad('Choose the month this payment is for');
+    // Monthly rents are paid for a given month; daily and weekly ones are simply paid on a date.
+    if (r.period_unit === 'month' && !isMonth(b.period)) throw bad('Choose the month this payment is for');
+    b.period = r.period_unit === 'month' ? b.period : null;
     Object.assign(t, { currency: a.currency, amount: amt, rental_id: r.id, customer_id: r.customer_id, period: b.period, pnl: amt, pnl_currency: a.currency });
     move(a, amt);
 
@@ -181,11 +183,11 @@ export async function getState(user, day) {
   }
 
   const paid = new Map((await q("select rental_id, sum(amount) s from txns where type='rent_payment' group by rental_id")).map((r) => [r.rental_id, r.s]));
-  const month = day.slice(0, 7);
   const rentals = (await q('select r.*, c.name customer_name from rentals r join customers c on c.id = r.customer_id order by r.active desc, lower(r.property)')).map((r) => {
-    const last = r.end_month && r.end_month < month ? r.end_month : month;
-    const months = monthsBetween(r.start_month, last), expected = months * r.monthly, p = paid.get(r.id) || 0;
-    return { ...r, months_due: months, expected, paid: p, outstanding: expected - p };
+    // Rent stops counting at the end date (planned return, or the day the rental was ended).
+    const last = r.end_date && r.end_date < day ? r.end_date : day;
+    const periods = periodsDue(r.period_unit, r.start_date, last), expected = periods * r.rate, p = paid.get(r.id) || 0;
+    return { ...r, periods_due: periods, expected, paid: p, outstanding: expected - p, finished: !r.active || (!!r.end_date && r.end_date < day) };
   });
 
   const state = {

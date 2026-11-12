@@ -1,20 +1,24 @@
 // Three simple screens: a few buttons and the list of matching operations.
 import { Link } from 'react-router-dom';
 import { Card, Head, Op, TxnTable } from '../components.jsx';
-import { fmtRate, useApp, useTxns } from '../lib.js';
+import { SHOW_DEPOSIT_WITHDRAW, fmtRate, useApp, useTxns } from '../lib.js';
 
 export function Transfers() {
   const rows = useTxns({ types: 'transfer,move' });
   return (
     <>
-      <Head title="Transfers" sub="Mobile money deposits and withdrawals — Airtel Money, M-Pesa, Orange Money">
-        <Op name="transfer" args={{ mode: 'deposit' }} cls="primary">+ Deposit</Op>
-        <Op name="transfer" args={{ mode: 'withdraw' }} cls="dark">+ Withdrawal</Op>
-        <Op name="transfer" args={{ mode: 'other' }}>Other transfer</Op>
+      <Head title="Transfers" sub="Mobile money transfers — Airtel Money, M-Pesa, Orange Money">
+        {SHOW_DEPOSIT_WITHDRAW ? (
+          <>
+            <Op name="transfer" args={{ mode: 'deposit' }} cls="primary">+ Deposit</Op>
+            <Op name="transfer" args={{ mode: 'withdraw' }} cls="dark">+ Withdrawal</Op>
+            <Op name="transfer" args={{ mode: 'other' }}>Other transfer</Op>
+          </>
+        ) : <Op name="transfer" args={{ mode: 'other' }} cls="primary">+ Transfer</Op>}
         <Op name="move">Move between my accounts</Op>
-        <Link className="btn" to="/rates">Prices</Link>
+        {SHOW_DEPOSIT_WITHDRAW && <Link className="btn" to="/rates">Prices</Link>}
       </Head>
-      <Card><TxnTable rows={rows} empty="No transfers yet. Record your first deposit or withdrawal." /></Card>
+      <Card><TxnTable rows={rows} empty="No transfers yet." /></Card>
     </>
   );
 }

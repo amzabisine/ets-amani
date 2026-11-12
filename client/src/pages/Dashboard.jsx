@@ -1,6 +1,6 @@
 import { Link, useNavigate } from 'react-router-dom';
 import { Card, Empty, Head, Money, Op, Stat, TxnTable } from '../components.jsx';
-import { debtTotals, dfmt, live, n2, sum, total, useApp } from '../lib.js';
+import { SHOW_DEPOSIT_WITHDRAW, debtTotals, dfmt, live, n2, sum, total, useApp } from '../lib.js';
 
 const providerColor = (p) => (/airtel/i.test(p) ? '#e4002b' : /pesa|voda/i.test(p) ? '#2f9e44' : /orange/i.test(p) ? '#ff7900' : '#11564b');
 
@@ -40,7 +40,7 @@ export default function Dashboard() {
   return (
     <>
       <Head title="Dashboard" sub={`Situation on ${dfmt(S.today.date)}`}>
-        <Op name="transfer" args={{ mode: 'deposit' }} cls="primary">+ Transfer</Op>
+        <Op name="transfer" args={{ mode: SHOW_DEPOSIT_WITHDRAW ? 'deposit' : 'other' }} cls="primary">+ Transfer</Op>
         <Op name="exchange">⇄ Exchange</Op>
         <Op name="debt" args={{ type: 'loan_given' }}>Lend</Op>
         <Op name="capital" args={{ type: 'capital_in' }}>Add money</Op>
