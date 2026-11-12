@@ -1,4 +1,10 @@
+import net from 'node:net';
 import pg from 'pg';
+
+// Node gives each address only 250 ms to answer before trying the next one.
+// On a slow or distant internet link that is too short and every attempt
+// fails with ETIMEDOUT, so allow 10 seconds.
+net.setDefaultAutoSelectFamilyAttemptTimeout(10_000);
 
 // Postgres returns bigint / numeric / date as strings by default.
 // Amounts are whole cents well below 2^53, so plain numbers are safe.
@@ -15,6 +21,7 @@ if (!url) {
 export const pool = new pg.Pool({
   connectionString: url,
   max: 10,
+  connectionTimeoutMillis: 30_000,
   // Supabase requires TLS; a local Postgres does not.
   ssl: /localhost|127\.0\.0\.1/.test(url) ? false : { rejectUnauthorized: false },
 });
