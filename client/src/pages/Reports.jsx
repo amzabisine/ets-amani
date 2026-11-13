@@ -21,7 +21,7 @@ const Num = ({ v, cur }) => (v ? <span className="num">{n2(v, cur)}</span> : <Da
 function CashPosition({ rep }) {
   const { S } = useApp();
   const byId = new Map(rep.accounts.map((a) => [a.id, a]));
-  const rows = S.accounts.map((a) => ({ ...a, ...byId.get(a.id) })).filter((a) => a.opening || a.money_in || a.money_out); // accounts with no money and no movement are left out
+  const rows = S.accounts.map((a) => ({ ...a, ...byId.get(a.id) })).filter((a) => !a.archived || a.opening || a.money_in || a.money_out); // every open account, even at zero
   const line = (key, label, a, bold) => (
     <tr key={key} className={bold ? 'total' : ''}>
       <td>{label}</td><td>{a.currency}</td>
