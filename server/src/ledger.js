@@ -29,14 +29,13 @@ async function account(db, id) {
   return a;
 }
 
+/** The customer of an operation. Customers are only created on the Customers form, never here. */
 export async function customerId(db, b, required) {
-  const name = str(b.new_customer, 80);
-  if (name) return (await db.one('insert into customers(name) values($1) returning id', [name])).id;
   if (b.customer_id) {
     if (!(await db.one('select 1 from customers where id=$1', [Number(b.customer_id)]))) throw bad('Customer not found');
     return Number(b.customer_id);
   }
-  if (required) throw bad('Please choose a customer or type a new name');
+  if (required) throw bad('Please choose a customer');
   return null;
 }
 

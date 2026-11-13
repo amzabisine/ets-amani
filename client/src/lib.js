@@ -47,6 +47,19 @@ export const dfmt = (d) => { const [y, m, dd] = d.split('-'); return `${dd}/${m}
 export const accName = (a) => (a ? `${a.provider}${a.label ? ' ' + a.label : ''}` : '—');
 export const accFull = (a) => (a ? `${accName(a)} · ${a.currency}` : '—');
 
+/* ---------- customers ---------- */
+/** A phone number reduced to what identifies it: its last 9 digits (so 0991… and +243 991… match). */
+export const phoneKey = (phone) => { const d = String(phone || '').replace(/\D/g, ''); return d.length >= 9 ? d.slice(-9) : d; };
+const plain = (s) => String(s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+/** Does this customer match what was typed? Looks anywhere in the name, and in the phone digits. */
+export function matchesCustomer(c, query) {
+  const text = plain(query).trim(), digits = query.replace(/\D/g, '');
+  if (!text) return true;
+  return plain(c.name).includes(text) || (digits.length > 0 && String(c.phone || '').replace(/\D/g, '').includes(digits));
+}
+/** "owes you 150.00 USD · you owe 30,000 CDF", or '' when nothing is pending. */
+export const debtSummary = (c) => Object.entries(c.balances).map(([cur, b]) => `${b > 0 ? 'owes you' : 'you owe'} ${n2(Math.abs(b), cur)} ${cur}`).join(' · ');
+
 /* ---------- reading the state ---------- */
 export const acc = (S, id) => S.accounts.find((a) => a.id === Number(id));
 export const live = (S) => S.accounts.filter((a) => !a.archived);

@@ -1,22 +1,26 @@
+import { useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { Card, Dash, Empty, Head, Money, Op, TxnTable } from '../components.jsx';
-import { useApp, useTxns } from '../lib.js';
+import { matchesCustomer, useApp, useTxns } from '../lib.js';
 
 export function Customers() {
   const { S } = useApp();
   const navigate = useNavigate();
+  const [query, setQuery] = useState('');
+  const list = S.customers.filter((c) => matchesCustomer(c, query));
   return (
     <>
       <Head title="Customers" sub={`${S.customers.length} people`}>
         <Op name="customer" cls="primary">+ New customer</Op>
       </Head>
+      <div className="filters"><input type="search" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search by name or phone number…" style={{ width: 320, maxWidth: '100%' }} /></div>
       <Card>
-        {S.customers.length ? (
+        {list.length ? (
           <div className="tw">
             <table className="t">
               <thead><tr><th>Name</th><th>Phone</th><th>Note</th><th className="r">Balance</th></tr></thead>
               <tbody>
-                {S.customers.map((c) => {
+                {list.map((c) => {
                   const balances = Object.entries(c.balances);
                   return (
                     <tr key={c.id} className="link" onClick={() => navigate(`/customers/${c.id}`)}>
@@ -32,7 +36,7 @@ export function Customers() {
               </tbody>
             </table>
           </div>
-        ) : <Empty>No customers yet.</Empty>}
+        ) : <Empty>{S.customers.length ? 'No customer matches your search.' : 'No customers yet.'}</Empty>}
       </Card>
     </>
   );

@@ -1,19 +1,18 @@
 // Every operation the owner can do. FORMS open a dialog; ACTIONS run directly.
 import { Signed } from './components.jsx';
 import FeeList from './FeeList.jsx';
-import { RENTAL_TYPES, SHOW_DEPOSIT_WITHDRAW, acc, accFull, accName, api, exchangeRate, fmtRate, live, n2, transferFee } from './lib.js';
+import { RENTAL_TYPES, SHOW_DEPOSIT_WITHDRAW, phoneKey, acc, accFull, accName, api, exchangeRate, fmtRate, live, n2, transferFee } from './lib.js';
 
 const accOpts = (list) => list.map((a) => ({ value: a.id, label: `${accFull(a)}  —  ${n2(a.balance, a.currency)} available` }));
 const curOpts = (S) => S.currencies.map((c) => ({ value: c, label: c }));
 const fDate = (S) => ({ name: 'date', label: 'Date', type: 'date', value: S.today.date, required: true });
 const fNote = { name: 'note', label: 'Note (optional)' };
-const fCustomer = (S, id, required, label) => [
-  {
-    name: 'customer_id', label: label || (required ? 'Customer' : 'Customer (optional)'), type: 'select', value: id || '',
-    options: [{ value: '', label: '— choose —' }, ...S.customers.map((c) => ({ value: c.id, label: c.name + (c.phone ? ' · ' + c.phone : '') }))],
-  },
-  { name: 'new_customer', label: '…or type a new customer name', placeholder: 'New customer' },
-];
+// The customer field: a search box over the customer list, with "+ New customer" at the bottom.
+const fCustomer = (S, id, required, label) => [{
+  name: 'customer_id', type: 'customer', required, value: id || '',
+  label: label || (required ? 'Customer' : 'Customer (optional)'),
+  newForm: (text) => FORMS.customer(S, { prefill: text }),
+}];
 // The usual categories first, then any others already used.
 const CATEGORIES = {
   expense: ['Rent paid', 'Salaries', 'Internet / Wi-Fi', 'Electricity', 'Water', 'Transport', 'Airtime', 'Taxes and fees', 'Maintenance', 'Office supplies', 'Other'],
@@ -43,11 +42,12 @@ function repaymentForm(S, type, customer) {
     title: receiving ? 'Customer pays you back' : 'Pay back what you owe',
     intro: receiving ? 'Only people who owe you are listed. Money comes into your account.' : 'Only people you owe are listed. Money leaves your account.',
     fields: [fDate(S),
-      { name: 'customer_id', label: receiving ? 'Who is paying you?' : 'Who are you paying?', type: 'select', value: customer || '',
-        options: people.map((c) => ({ value: c.id, label: `${c.name} — ${receiving ? 'owes you' : 'you owe'} ${due(c).map(([cur, b]) => `${n2(b, cur)} ${cur}`).join(' and ')}` })) },
+      // search box limited to people with a debt in this direction; no "+ New customer" here
+      { name: 'customer_id', label: receiving ? 'Who is paying you?' : 'Who are you paying?', type: 'customer', required: true, people,
+        value: customer || (people.length === 1 ? people[0].id : '') },
       // only accounts in a currency of the debt
       { name: 'account_id', label: receiving ? 'Received in' : 'Paid from', type: 'select', resetOn: 'customer_id',
-        options: (v) => { const c = person(v), curs = c ? due(c).map(([cur]) => cur) : []; return accOpts(live(S).filter((a) => curs.includes(a.currency))); } },
+        options: (v) => { const c = person(v); return accOpts(live(S).filter((a) => !c || due(c).some(([cur]) => cur === a.currency))); } },
       { name: 'amount', label: 'Amount', type: 'money', required: true, hint: 'Filled with the full debt. Lower it for a partial payment.',
         auto: (v) => (owed(v) ? String(owed(v) / 100) : '') },
       fNote],
@@ -296,12 +296,28 @@ export const FORMS = {
     };
   },
 
-  customer(S, { id } = {}) {
+  /** The one place where customers are created or changed. `prefill` is what was typed in a search box. */
+  customer(S, { id, prefill = '' } = {}) {
     const c = id && S.customers.find((x) => x.id === Number(id));
+    const looksLikePhone = /^[\d\s+().-]{4,}$/.test(prefill);
+    const others = S.customers.filter((x) => x.id !== c?.id);
+    const samePhone = (v) => phoneKey(v.phone) && others.find((x) => phoneKey(x.phone) === phoneKey(v.phone));
+    const sameName = (v) => v.name.trim() && others.find((x) => x.name.trim().toLowerCase() === v.name.trim().toLowerCase());
     return {
       title: c ? 'Edit customer' : 'New customer',
-      fields: [{ name: 'name', label: 'Name', required: true, value: c?.name }, { name: 'phone', label: 'Phone', value: c?.phone }, { name: 'note', label: 'Note', value: c?.note }],
-      onSubmit: (v) => api(c ? 'PUT' : 'POST', '/customers' + (c ? '/' + c.id : ''), v),
+      fields: [
+        { name: 'name', label: 'Name', required: true, value: c?.name ?? (looksLikePhone ? '' : prefill) },
+        { name: 'phone', label: 'Phone', type: 'tel', value: c?.phone ?? (looksLikePhone ? prefill : ''), hint: 'Each phone number can belong to one customer only.' },
+        { name: 'note', label: 'Note', value: c?.note }],
+      info(v) {
+        if (samePhone(v)) return <b className="neg">This phone number already belongs to {samePhone(v).name}.</b>;
+        if (sameName(v)) return <>A customer named <b>{sameName(v).name}</b> already exists{sameName(v).phone ? ` (${sameName(v).phone})` : ''}. Save only if this is a different person.</>;
+        return null;
+      },
+      onSubmit(v) {
+        if (samePhone(v)) throw new Error(`This phone number already belongs to ${samePhone(v).name}`);
+        return api(c ? 'PUT' : 'POST', '/customers' + (c ? '/' + c.id : ''), v);
+      },
     };
   },
 

@@ -104,12 +104,19 @@ export default function App() {
     /** Start an operation by name: open its form, or run its action. */
     async run(name, args = {}) {
       try {
-        if (FORMS[name]) return setForm(FORMS[name](S, args));
+        if (FORMS[name]) { FORMS[name](S, args); return setForm({ name, args }); } // building it once shows any "nothing to do" message
         const message = await ACTIONS[name](S, args);
         if (message) { toast(message); await refresh(); }
       } catch (e) { toast(e.message, true); }
     },
   }, [S, refresh, toast]);
+
+  // The open form is described again whenever the data changes (e.g. a customer was just added),
+  // so its lists are always current; what the user already typed is kept by the dialog itself.
+  const formConfig = useMemo(() => {
+    if (!form || !S) return null;
+    try { return FORMS[form.name](S, form.args); } catch { return null; }
+  }, [form, S]);
 
   const toastEl = <div className={`toast ${toastMsg ? 'show' : ''} ${toastMsg?.bad ? 'bad' : ''}`}>{toastMsg?.text}</div>;
   if (!me) return toastEl;
@@ -153,10 +160,10 @@ export default function App() {
         </main>
         <button className="burger" onClick={() => setMenu((m) => !m)} aria-label="Menu">☰</button>
       </div>
-      {form && (() => {
-        const Dialog = form.custom || FormModal; // a few forms bring their own dialog
+      {formConfig && (() => {
+        const Dialog = formConfig.custom || FormModal; // a few forms bring their own dialog
         return (
-          <Dialog config={form} onClose={() => setForm(null)}
+          <Dialog config={formConfig} onClose={() => setForm(null)}
             onDone={async (message) => { setForm(null); toast(message); await refresh(); }} />
         );
       })()}

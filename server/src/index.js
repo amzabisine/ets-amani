@@ -92,9 +92,26 @@ api.put('/accounts/:id', async (req, res) => {
   ok(res);
 });
 
-const customerFields = (b) => { const name = str(b.name, 80); if (!name) throw bad('Enter the customer name'); return [name, str(b.phone, 40), str(b.note, 300)]; };
-api.post('/customers', async (req, res) => { await q('insert into customers(name, phone, note) values($1,$2,$3)', customerFields(req.body)); ok(res); });
-api.put('/customers/:id', async (req, res) => { await q('update customers set name=$1, phone=$2, note=$3 where id=$4', [...customerFields(req.body), id(req)]); ok(res); });
+// Two people can share a name, never a phone number. Numbers are compared on their
+// last 9 digits, so 0991 234 567 and +243 991 234 567 count as the same phone.
+const phoneKey = (phone) => { const d = String(phone || '').replace(/\D/g, ''); return d.length >= 9 ? d.slice(-9) : d; };
+async function saveCustomer(b, customerId) {
+  const name = str(b.name, 80), phone = str(b.phone, 40), key = phoneKey(phone);
+  if (!name) throw bad('Enter the customer name');
+  return tx(async (db) => {
+    await db.q('lock table customers in share row exclusive mode'); // two saves at once cannot both take the same number
+    if (key) {
+      const taken = (await db.q("select id, name, phone from customers where phone <> '' and id <> $1", [customerId || 0])).find((c) => phoneKey(c.phone) === key);
+      if (taken) throw bad(`This phone number already belongs to ${taken.name}`);
+    }
+    if (!customerId) return (await db.one('insert into customers(name, phone, note) values($1,$2,$3) returning id', [name, phone, str(b.note, 300)])).id;
+    const rows = await db.q('update customers set name=$1, phone=$2, note=$3 where id=$4 returning id', [name, phone, str(b.note, 300), customerId]);
+    if (!rows.length) throw bad('Customer not found', 404);
+    return customerId;
+  });
+}
+api.post('/customers', async (req, res) => res.json({ ok: true, id: await saveCustomer(req.body) }));
+api.put('/customers/:id', async (req, res) => res.json({ ok: true, id: await saveCustomer(req.body, id(req)) }));
 api.delete('/customers/:id', async (req, res) => {
   if (await one('select 1 from txns where customer_id=$1 limit 1', [id(req)]) || await one('select 1 from rentals where customer_id=$1 limit 1', [id(req)])) {
     throw bad('This customer has records and cannot be deleted');

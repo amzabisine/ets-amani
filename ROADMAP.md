@@ -30,6 +30,7 @@ Single-file prototype used to agree on the features and the look. Replaced by th
 
 ## Phase 4 — Customers and debts ✅
 - Customer list and per-customer history
+- Customers are created through one form only; every form picks them from a search box (name or phone), and a phone number belongs to one customer
 - Lend, receive repayment, borrow, pay back
 - Repayments only offer people with a debt in that direction, and can never exceed the debt
 - "They have my money" / "I have their money" per person and in total

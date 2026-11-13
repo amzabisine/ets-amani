@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { Link } from 'react-router-dom';
-import { TYPES, describe, dfmt, n2, useApp } from './lib.js';
+import { TYPES, debtSummary, describe, dfmt, matchesCustomer, n2, useApp } from './lib.js';
 
 export const Money = ({ v, cur }) => <span className="num">{n2(v, cur)}<span className="cur">{cur}</span></span>;
 export const Signed = ({ v, cur }) => (
@@ -114,8 +115,57 @@ function settle(fields, values, touched) {
   return v;
 }
 
+/** Customer field: type a few letters of the name or digits of the phone, then pick from the list. */
+export function CustomerPicker({ id, value, people, onChange, onNew }) {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState('');
+  const [at, setAt] = useState(0); // highlighted line
+  const selected = people.find((c) => String(c.id) === String(value));
+  const found = people.filter((c) => matchesCustomer(c, query)).slice(0, 50);
+  const lines = found.length + (onNew ? 1 : 0);
+
+  const show = () => { if (!open) { setOpen(true); setQuery(''); setAt(0); } };
+  const pick = (c) => { onChange(String(c.id)); setOpen(false); };
+  const addNew = () => { setOpen(false); onNew(query.trim()); };
+  const choose = (i) => (i < found.length ? pick(found[i]) : onNew && addNew());
+  const onKey = (e) => {
+    if (e.key === 'ArrowDown') { e.preventDefault(); if (open) setAt((i) => Math.min(i + 1, lines - 1)); else show(); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); setAt((i) => Math.max(i - 1, 0)); }
+    else if (e.key === 'Enter' && open) { e.preventDefault(); if (lines) choose(at); }
+    else if (e.key === 'Escape' && open) { e.stopPropagation(); setOpen(false); }
+  };
+  const detail = (c) => [c.phone, debtSummary(c)].filter(Boolean).join(' · ');
+
+  return (
+    <div className="picker">
+      <input id={id} autoComplete="off" placeholder="Type a name or phone number…"
+        value={open ? query : selected ? selected.name + (selected.phone ? ' · ' + selected.phone : '') : ''}
+        onMouseDown={show} onKeyDown={onKey} onBlur={() => setOpen(false)}
+        onChange={(e) => { setOpen(true); setQuery(e.target.value); setAt(0); }} />
+      {selected && !open && <button type="button" className="clear" onClick={() => onChange('')} aria-label="Clear customer">×</button>}
+      {open && (
+        <div className="list" onMouseDown={(e) => e.preventDefault() /* keep the focus in the box while clicking */}>
+          {found.map((c, i) => (
+            <div key={c.id} className={`opt ${i === at ? 'on' : ''}`} onMouseEnter={() => setAt(i)} onClick={() => pick(c)}>
+              <b>{c.name}</b>{detail(c) && <div className="sub">{detail(c)}</div>}
+            </div>
+          ))}
+          {!found.length && <div className="none">{people.length ? 'No customer matches.' : 'No customers yet.'}</div>}
+          {onNew && (
+            <div className={`opt new ${at === found.length ? 'on' : ''}`} onMouseEnter={() => setAt(found.length)} onClick={addNew}>
+              + New customer{query.trim() && !found.length ? ` “${query.trim()}”` : ''}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function FormModal({ config, onClose, onDone }) {
   const { fields } = config;
+  const { S, refresh, toast } = useApp();
+  const [adding, setAdding] = useState(null); // { field, text } while the "new customer" form is open on top
   const touched = useRef(new Set());
   // A field can have `show: (values) => boolean`; hidden fields are neither displayed nor required.
   const [values, setValues] = useState(() =>
@@ -140,8 +190,10 @@ export function FormModal({ config, onClose, onDone }) {
 
   const submit = async (e) => {
     e.preventDefault();
+    const missing = fields.find((f) => f.type === 'customer' && f.required && (!f.show || f.show(values)) && !values[f.name]);
+    if (missing) return setError('Please choose a customer');
     setBusy(true); setError('');
-    try { await config.onSubmit(values); onDone(config.done || 'Saved'); }
+    try { const result = await config.onSubmit(values); onDone(config.done || 'Saved', result); }
     catch (ex) { setError(ex.message); setBusy(false); }
   };
 
@@ -160,6 +212,16 @@ export function FormModal({ config, onClose, onDone }) {
               return (
                 <div className="f" key={f.name}>
                   <label className="check"><input type="checkbox" checked={values[f.name]} onChange={(e) => set(f.name, e.target.checked)} /> {f.label}</label>
+                  {f.hint && <div className="hint">{f.hint}</div>}
+                </div>
+              );
+            }
+            if (f.type === 'customer') {
+              return (
+                <div className="f" key={f.name}>
+                  <label htmlFor={id}>{f.label}</label>
+                  <CustomerPicker id={id} value={values[f.name]} people={f.people || S.customers} onChange={(v) => set(f.name, v)}
+                    onNew={f.newForm && ((text) => setAdding({ field: f.name, text }))} />
                   {f.hint && <div className="hint">{f.hint}</div>}
                 </div>
               );
@@ -186,6 +248,11 @@ export function FormModal({ config, onClose, onDone }) {
           </footer>
         </form>
       </div>
+      {/* "+ New customer": the customer form opens on top; this form keeps everything already typed. */}
+      {adding && createPortal(
+        <FormModal config={fields.find((f) => f.name === adding.field).newForm(adding.text)} onClose={() => setAdding(null)}
+          onDone={async (message, result) => { await refresh(); set(adding.field, String(result.id)); setAdding(null); toast('Customer added'); }} />,
+        document.body)}
     </div>
   );
 }
