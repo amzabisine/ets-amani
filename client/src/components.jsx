@@ -130,6 +130,7 @@ export function FormModal({ config, onClose, onDone }) {
 
   const set = (name, value) => {
     touched.current.add(name);
+    setError(''); // the old message no longer applies once something is changed
     setValues((old) => {
       const v = { ...old, [name]: value };
       for (const f of fields) if (f.resetOn === name) v[f.name] = '';

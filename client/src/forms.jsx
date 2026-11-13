@@ -26,6 +26,52 @@ const post = (type) => (v) => api('POST', '/txns', { ...v, type });
 
 const Avail = ({ a }) => (a ? <>Available in <b>{accFull(a)}</b>: <b>{n2(a.balance, a.currency)} {a.currency}</b></> : null);
 
+/** Receive a repayment (from people who owe me) or pay back (people I owe). Only those people are offered. */
+function repaymentForm(S, type, customer) {
+  const receiving = type === 'loan_repaid';
+  // What is still due per currency, as positive amounts, seen from the side being repaid.
+  const due = (c) => Object.entries(c.balances).map(([cur, b]) => [cur, receiving ? b : -b]).filter(([, b]) => b > 0);
+  const people = S.customers.filter((c) => due(c).length);
+  if (!people.length) throw new Error(receiving ? 'Nobody owes you money right now' : 'You do not owe anybody right now');
+  if (customer && !people.some((c) => c.id === Number(customer))) {
+    const name = S.customers.find((c) => c.id === Number(customer))?.name || 'This person';
+    throw new Error(receiving ? `${name} does not owe you anything` : `You do not owe ${name} anything`);
+  }
+  const person = (v) => people.find((c) => c.id === Number(v.customer_id));
+  const owed = (v) => { const c = person(v), a = acc(S, v.account_id); return c && a ? Object.fromEntries(due(c))[a.currency] || 0 : 0; };
+  return {
+    title: receiving ? 'Customer pays you back' : 'Pay back what you owe',
+    intro: receiving ? 'Only people who owe you are listed. Money comes into your account.' : 'Only people you owe are listed. Money leaves your account.',
+    fields: [fDate(S),
+      { name: 'customer_id', label: receiving ? 'Who is paying you?' : 'Who are you paying?', type: 'select', value: customer || '',
+        options: people.map((c) => ({ value: c.id, label: `${c.name} — ${receiving ? 'owes you' : 'you owe'} ${due(c).map(([cur, b]) => `${n2(b, cur)} ${cur}`).join(' and ')}` })) },
+      // only accounts in a currency of the debt
+      { name: 'account_id', label: receiving ? 'Received in' : 'Paid from', type: 'select', resetOn: 'customer_id',
+        options: (v) => { const c = person(v), curs = c ? due(c).map(([cur]) => cur) : []; return accOpts(live(S).filter((a) => curs.includes(a.currency))); } },
+      { name: 'amount', label: 'Amount', type: 'money', required: true, hint: 'Filled with the full debt. Lower it for a partial payment.',
+        auto: (v) => (owed(v) ? String(owed(v) / 100) : '') },
+      fNote],
+    info(v) {
+      const c = person(v), a = acc(S, v.account_id), left = owed(v) - Math.round(Number(v.amount) * 100);
+      if (!c || !a) return null;
+      return (
+        <>
+          {!receiving && <><Avail a={a} /><br /></>}
+          {c.name} {receiving ? 'owes you' : 'is owed'} <b>{n2(owed(v), a.currency)} {a.currency}</b>
+          {left > 0 && <> · after this payment: <b>{n2(left, a.currency)} {a.currency}</b> left</>}
+          {left === 0 && <> · this payment clears the debt</>}
+          {left < 0 && <><br /><b className="neg">This is more than the debt.</b></>}
+        </>
+      );
+    },
+    onSubmit(v) {
+      const a = acc(S, v.account_id), amount = Math.round(Number(v.amount) * 100);
+      if (amount > owed(v)) throw new Error(receiving ? `${person(v).name} owes only ${n2(owed(v), a.currency)} ${a.currency}` : `You owe ${person(v).name} only ${n2(owed(v), a.currency)} ${a.currency}`);
+      return api('POST', '/txns', { ...v, type });
+    },
+  };
+}
+
 export const FORMS = {
   transfer(S, { mode = 'other' } = {}) {
     const cashish = live(S).filter((a) => a.kind !== 'virtual'), virt = live(S).filter((a) => a.kind === 'virtual');
@@ -118,13 +164,12 @@ export const FORMS = {
   },
 
   debt(S, { type, customer }) {
+    if (type === 'loan_repaid' || type === 'borrow_repaid') return repaymentForm(S, type, customer);
     const [title, intro, accLabel] = {
       loan_given: ['Lend money to a customer', 'Money leaves your account. The customer now owes you.', 'Paid from'],
-      loan_repaid: ['Customer pays you back', 'Money comes into your account. What the customer owes goes down.', 'Received in'],
       borrowed: ['Borrow money / keep someone’s money', 'Money comes into your account. You now owe this person.', 'Received in'],
-      borrow_repaid: ['Pay back what you owe', 'Money leaves your account. What you owe goes down.', 'Paid from'],
     }[type];
-    const outgoing = type === 'loan_given' || type === 'borrow_repaid';
+    const outgoing = type === 'loan_given';
     return {
       title, intro,
       fields: [fDate(S), ...fCustomer(S, customer, true),

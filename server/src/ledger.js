@@ -90,7 +90,19 @@ export async function createTxn(db, b, user) {
 
   } else if (['loan_given', 'loan_repaid', 'borrowed', 'borrow_repaid'].includes(type)) {
     const a = await account(db, b.account_id), amt = toMinor(b.amount);
-    t.customer_id = await customerId(db, b, true);
+    const repayment = type === 'loan_repaid' || type === 'borrow_repaid';
+    if (repayment) {
+      // A repayment needs an existing debt in this currency, and can never be bigger than it.
+      const c = Number(b.customer_id) ? await db.one('select * from customers where id=$1 for update', [Number(b.customer_id)]) : null;
+      if (!c) throw bad('Please choose the person');
+      const { d } = await db.one('select coalesce(sum(debt_delta), 0) d from txns where customer_id=$1 and currency=$2', [c.id, a.currency]);
+      const owed = type === 'loan_repaid' ? d : -d; // what is still due, seen from the side being repaid
+      if (owed <= 0) throw bad(type === 'loan_repaid' ? `${c.name} does not owe you anything in ${a.currency}` : `You do not owe ${c.name} anything in ${a.currency}`);
+      if (amt > owed) throw bad(type === 'loan_repaid' ? `${c.name} owes only ${fmt(owed)} ${a.currency}` : `You owe ${c.name} only ${fmt(owed)} ${a.currency}`);
+      t.customer_id = c.id;
+    } else {
+      t.customer_id = await customerId(db, b, true);
+    }
     t.currency = a.currency; t.amount = amt;
     const out = type === 'loan_given' || type === 'borrow_repaid';
     move(a, out ? -amt : amt);

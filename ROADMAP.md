@@ -31,6 +31,7 @@ Single-file prototype used to agree on the features and the look. Replaced by th
 ## Phase 4 — Customers and debts ✅
 - Customer list and per-customer history
 - Lend, receive repayment, borrow, pay back
+- Repayments only offer people with a debt in that direction, and can never exceed the debt
 - "They have my money" / "I have their money" per person and in total
 
 ## Phase 5 — Rentals, income and expenses ✅
